@@ -1,0 +1,42 @@
+{
+  "name": "llm-adapter.js",
+  "version": "0.1.0",
+  "description": "A library for adapting LLM models to different APIs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZebraRoy/llm-adapter.js"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "llm",
+    "large",
+    "language",
+    "model",
+    "gpt"
+  ],
+  "author": "ZebraRoy",
+  "license": "MIT",
+  "dependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3"
+  }
+}
