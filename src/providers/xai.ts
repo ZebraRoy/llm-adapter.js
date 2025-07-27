@@ -102,7 +102,7 @@ export function createXAIAdapter(config: XAIConfig): LLMAdapter {
  */
 function formatOpenAIRequest(config: LLMConfig, defaultModel: string, stream = false): any {
   // Validate tool result messages
-  config.messages.forEach(validateToolResultMessage);
+  config.messages.forEach(msg => validateToolResultMessage(msg, 'xai'));
   
   // Validate conversation flow for xAI API
   validateOpenAIConversationFlow(config.messages, "xAI");

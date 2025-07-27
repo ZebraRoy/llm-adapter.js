@@ -11,6 +11,7 @@ import {
   mockOllamaResponse,
   mockOpenAIWithToolsResponse,
   mockAnthropicWithToolsResponse,
+  mockToolCallChainResponse,
   mockOpenAIStreamingChunks,
   mockAnthropicStreamingChunks,
   testMessages,
@@ -176,6 +177,44 @@ describe('Core API Functions', () => {
         expect(response.toolCalls).toHaveLength(1);
         expect(response.toolCalls![0]).toHaveProperty('name', 'get_weather');
         expect(response.toolCalls![0]).toHaveProperty('input');
+      });
+
+      it('should handle multi-round tool call chain correctly', async () => {
+        // Mock fetch to return different responses for each call
+        let callCount = 0;
+        const mockFetch = (input: any, init: any) => {
+          const response = mockToolCallChainResponse[callCount];
+          callCount++;
+          return createMockFetch(response)(input, init);
+        };
+
+        const config = { ...providerConfigs.openai, tools: testTools };
+
+        // Round 1: Get tool calls
+        const response1 = await sendMessage(config, { fetch: mockFetch });
+
+        expect(response1.capabilities.hasToolCalls).toBe(true);
+        expect(response1.toolCalls).toHaveLength(1);
+
+        // Update messages with assistant's response and tool result
+        const messages = [
+          ...response1.messages,
+          {
+            role: 'tool_result' as const,
+            content: 'The weather is 72°F',
+            tool_call_id: response1.toolCalls![0].id,
+          },
+        ];
+
+        // Round 2: Get final answer
+        const response2 = await sendMessage(
+          { ...config, messages },
+          { fetch: mockFetch }
+        );
+
+        expect(response2.capabilities.hasToolCalls).toBe(false);
+        expect(response2.content).toContain('72°F');
+        expect(response2.messages).toHaveLength(4); // user, assistant, tool_result, assistant
       });
     });
 

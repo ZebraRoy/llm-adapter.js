@@ -387,8 +387,8 @@ async function handleToolCallConversation() {
       config.messages.push({
         role: "tool_result",
         content: toolResult,
-        tool_call_id: toolCall.id, // CRITICAL: Link result to specific tool call
-        name: toolCall.name, // Optional: function name for debugging
+        tool_call_id: toolCall.id, // CRITICAL: Required for most providers
+        name: toolCall.name, // REQUIRED for Google provider, optional for others
       });
     }
 
@@ -479,8 +479,8 @@ class ToolCallConversation {
         this.config.messages.push({
           role: "tool_result",
           content: result,
-          tool_call_id: toolCall.id, // CRITICAL: Link result to specific tool call
-          name: toolCall.name, // Optional: function name for debugging
+          tool_call_id: toolCall.id, // CRITICAL: Required for most providers
+          name: toolCall.name, // REQUIRED for Google provider, optional for others
         });
       }
 
@@ -558,10 +558,25 @@ async function multiTurnExample() {
 
 5. **Use proper message structure**:
    - Assistant messages include `tool_calls` array for tool invocations
-   - Tool result messages must include `tool_call_id` to match the corresponding tool call
+   - Tool result messages must include `tool_call_id` for most providers (OpenAI, Anthropic, Groq, DeepSeek, xAI)
+   - Tool result messages must include `name` for Google provider (function name matching)
    - Tool result messages use `role: "tool_result"`
 
 This pattern ensures that the LLM has full context of what tools were called and their results, enabling natural follow-up conversations.
+
+### Provider-Specific Tool Call Requirements:
+
+| Provider | Tool Call ID | Required Fields | Notes |
+|----------|-------------|----------------|-------|
+| **OpenAI** | Real IDs | `tool_call_id` | Standard OpenAI format |
+| **Anthropic** | Real IDs | `tool_call_id` | Converted from `tool_use_id` |
+| **Google** | Generated IDs | `name` (function name) | Matches by function name, not ID |
+| **Groq** | Real IDs | `tool_call_id` | OpenAI-compatible |
+| **DeepSeek** | Real IDs | `tool_call_id` | OpenAI-compatible |
+| **xAI** | Real IDs | `tool_call_id` | OpenAI-compatible |
+| **Ollama** | N/A | N/A | Tool calling not supported |
+
+**Important for Google users**: When using Google Gemini, ensure your tool result messages include the `name` field matching the function name, as Google's API uses function names rather than IDs for matching.
 
 ### Reasoning Access (Anthropic & DeepSeek)
 

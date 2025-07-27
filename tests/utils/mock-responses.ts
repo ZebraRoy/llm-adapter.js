@@ -311,40 +311,62 @@ export const mockAnthropicWithToolsResponse = {
   }]
 };
 
-/**
- * Mock responses with reasoning
- */
-export const mockAnthropicWithThinkingResponse = {
-  ...mockAnthropicResponse,
-  model: "claude-3-7-sonnet-20250224",
-  content: [
-    {
-      type: "thinking",
-      content: "Let me think about this step by step. The user is asking a simple question, so I should provide a helpful response."
+export const mockToolCallChainResponse = [
+  // Round 1: Assistant requests tool calls
+  {
+    id: 'chatcmpl-1',
+    object: 'chat.completion',
+    created: 1677652288,
+    model: 'gpt-4-turbo',
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: null,
+          tool_calls: [
+            {
+              id: 'call_123',
+              type: 'function',
+              function: {
+                name: 'get_weather',
+                arguments: '{"location": "San Francisco"}',
+              },
+            },
+          ],
+        },
+        finish_reason: 'tool_calls',
+      },
+    ],
+    usage: {
+      prompt_tokens: 8,
+      completion_tokens: 19,
+      total_tokens: 27,
     },
-    {
-      type: "text",
-      text: "After considering your question, I'm happy to help you today!"
-    }
-  ],
-  usage: {
-    input_tokens: 15,
-    output_tokens: 25
-  }
-};
-
-export const mockDeepSeekWithReasoningResponse = {
-  ...mockDeepSeekResponse,
-  choices: [{
-    index: 0,
-    message: {
-      role: "assistant",
-      content: "After careful analysis, here's my response.",
-      reasoning: "I need to think through this systematically. The user is asking for help, so I should provide a thoughtful and useful answer."
+  },
+  // Round 2: Assistant provides final answer
+  {
+    id: 'chatcmpl-2',
+    object: 'chat.completion',
+    created: 1677652289,
+    model: 'gpt-4-turbo',
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: 'The weather in San Francisco is 72°F and sunny.',
+        },
+        finish_reason: 'stop',
+      },
+    ],
+    usage: {
+      prompt_tokens: 35,
+      completion_tokens: 20,
+      total_tokens: 55,
     },
-    finish_reason: "stop"
-  }]
-};
+  },
+];
 
 /**
  * Expected unified response format

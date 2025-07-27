@@ -100,8 +100,8 @@ export function createGoogleAdapter(config: GoogleConfig): LLMAdapter {
  * @returns Google API request body
  */
 function formatGoogleRequest(config: LLMConfig, defaultModel: string): any {
-  // Validate tool result messages
-  config.messages.forEach(validateToolResultMessage);
+  // Validate tool result messages with Google-specific rules
+  config.messages.forEach(msg => validateToolResultMessage(msg, 'google'));
 
   const contents = config.messages.map(msg => {
     if (msg.role === "system") {
@@ -111,15 +111,16 @@ function formatGoogleRequest(config: LLMConfig, defaultModel: string): any {
     
     // Handle tool result messages
     if (msg.role === "tool_result") {
-      if (!msg.tool_call_id) {
-        throw new Error("Tool result message must have tool_call_id for Google API");
+      // Google matches by function name, not tool_call_id
+      if (!msg.name) {
+        throw new Error("Tool result message must have function name for Google API");
       }
       return {
         role: "user",
         parts: [
           {
             functionResponse: {
-              name: msg.name, // Function name
+              name: msg.name, // Function name for matching
               response: typeof msg.content === "string" ? 
                 { result: msg.content } : msg.content,
             }
@@ -222,7 +223,7 @@ function parseGoogleResponse(data: any, requestConfig: LLMConfig): LLMResponse {
       }
       if (part.functionCall) {
         toolCalls.push({
-          id: `call_${Math.random().toString(36).substring(2, 15)}_${Date.now()}`, // More robust ID generation
+          id: `google_${part.functionCall.name}_${Date.now()}`, // Generate ID based on function name for matching
           name: part.functionCall.name,
           input: part.functionCall.args || {},
         });
@@ -293,7 +294,7 @@ function createGoogleStreamingResponse(
           
           if (part.functionCall) {
             const newToolCall: ToolCall = {
-              id: `call_${Math.random().toString(36).substring(2, 15)}_${Date.now()}`, // More robust ID generation
+              id: `google_${part.functionCall.name}_${Date.now()}`, // Generate ID based on function name for matching
               name: part.functionCall.name,
               input: part.functionCall.args || {},
             };

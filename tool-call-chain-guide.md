@@ -54,7 +54,8 @@ async function completeToolCallChain(initialConfig: ServiceConfig) {
         config.messages.push({
           role: "tool_result",
           content: `${toolCall.name}: ${result}`,
-          tool_call_id: toolCall.id, // Match result to call
+          tool_call_id: toolCall.id, // Required for most providers
+          name: toolCall.name, // Required for Google provider
         });
       }
 
@@ -182,6 +183,7 @@ async function streamingToolChain(config: ServiceConfig) {
                 role: "tool_result",
                 content: result,
                 tool_call_id: toolCall.id,
+                name: toolCall.name, // Required for Google provider
               });
             }
 
@@ -219,6 +221,7 @@ async function robustToolChain(config: ServiceConfig) {
               role: "tool_result",
               content: `SUCCESS: ${result}`,
               tool_call_id: toolCall.id,
+              name: toolCall.name, // Required for Google provider
             });
           } catch (error) {
             // ❌ Failure - inform LLM so it can try alternatives
@@ -226,6 +229,7 @@ async function robustToolChain(config: ServiceConfig) {
               role: "tool_result",
               content: `ERROR: ${toolCall.name} failed - ${error.message}. Try alternative approach.`,
               tool_call_id: toolCall.id,
+              name: toolCall.name, // Required for Google provider
             });
           }
         }
@@ -262,7 +266,8 @@ config.messages.push({ role: "assistant", content: response.content });
 config.messages.push({
   role: "tool_result",
   content: toolResult,
-  tool_call_id: toolCall.id, // Link result to specific call
+  tool_call_id: toolCall.id, // Required for most providers
+  name: toolCall.name, // Required for Google provider
 });
 ```
 
@@ -338,6 +343,7 @@ export async function runCompleteToolChain(
           role: "tool_result",
           content: result,
           tool_call_id: toolCall.id,
+          name: toolCall.name, // Required for Google provider
         });
       }
 

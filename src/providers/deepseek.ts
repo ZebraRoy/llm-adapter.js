@@ -102,7 +102,7 @@ export function createDeepSeekAdapter(config: DeepSeekConfig): LLMAdapter {
  */
 function formatDeepSeekRequest(config: LLMConfig, defaultModel: string, stream = false): any {
   // Validate tool result messages
-  config.messages.forEach(validateToolResultMessage);
+  config.messages.forEach(msg => validateToolResultMessage(msg, 'deepseek'));
   
   // Validate conversation flow for DeepSeek API
   validateOpenAIConversationFlow(config.messages, "DeepSeek");

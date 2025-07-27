@@ -113,7 +113,7 @@ export function createAnthropicAdapter(config: AnthropicConfig): LLMAdapter {
  */
 function formatAnthropicRequest(config: LLMConfig, defaultModel: string, enableThinking?: boolean, stream = false): any {
   // Validate tool result messages
-  config.messages.forEach(validateToolResultMessage);
+  config.messages.forEach(msg => validateToolResultMessage(msg, 'anthropic'));
 
   // Separate system messages from regular messages
   const systemMessages = config.messages.filter(msg => msg.role === "system");

@@ -102,7 +102,7 @@ export function createGroqAdapter(config: GroqConfig): LLMAdapter {
  */
 function formatOpenAIRequest(config: LLMConfig, defaultModel: string, stream = false): any {
   // Validate tool result messages
-  config.messages.forEach(validateToolResultMessage);
+  config.messages.forEach(msg => validateToolResultMessage(msg, 'groq'));
   
   // Validate conversation flow for Groq API
   validateOpenAIConversationFlow(config.messages, "Groq");

@@ -336,6 +336,102 @@ export async function browserStreamingExample() {
   return stream;
 }
 
+// ===== TOOL CALL CHAIN EXAMPLE =====
+
+/**
+ * Executes a tool call and returns a mock result.
+ * In a real application, this would call your actual tools.
+ * @param toolCall - The tool call to execute
+ * @returns A mock result for the tool
+ */
+async function executeMockTool(toolCall: { name: string; input: any }): Promise<string> {
+  console.log(`Executing tool: ${toolCall.name} with input:`, toolCall.input);
+  switch (toolCall.name) {
+    case 'get_weather':
+      return `The weather in ${toolCall.input.location} is 72°F and sunny.`;
+    case 'get_stock_price':
+      return `The stock price of ${toolCall.input.symbol} is $${(Math.random() * 1000).toFixed(2)}.`;
+    default:
+      return `Unknown tool: ${toolCall.name}`;
+  }
+}
+
+/**
+ * Example: Complete tool call chain with multiple rounds
+ */
+export async function toolCallChainExample() {
+  const config: ServiceConfig = {
+    service: 'openai',
+    apiKey: 'your-openai-api-key',
+    model: 'gpt-4',
+    messages: [
+      {
+        role: 'user',
+        content: "What's the weather in San Francisco and what's the stock price of GOOG?",
+      },
+    ],
+    tools: [
+      {
+        name: 'get_weather',
+        description: 'Get the current weather in a given location',
+        parameters: {
+          type: 'object',
+          properties: {
+            location: {
+              type: 'string',
+              description: 'The city and state, e.g. San Francisco, CA',
+            },
+          },
+          required: ['location'],
+        },
+      },
+      {
+        name: 'get_stock_price',
+        description: 'Get the current stock price for a given symbol',
+        parameters: {
+          type: 'object',
+          properties: {
+            symbol: {
+              type: 'string',
+              description: 'The stock symbol, e.g. GOOG',
+            },
+          },
+          required: ['symbol'],
+        },
+      },
+    ],
+  };
+
+  let round = 1;
+  const maxRounds = 5;
+
+  while (round <= maxRounds) {
+    console.log(`--- Round ${round} ---`);
+    const response = await sendMessage(config);
+
+    if (response.toolCalls && response.toolCalls.length > 0) {
+      // IMPORTANT: Update history with the assistant's message, including tool calls
+      config.messages = response.messages;
+
+      for (const toolCall of response.toolCalls) {
+        const result = await executeMockTool(toolCall);
+        config.messages.push({
+          role: 'tool_result',
+          content: result,
+          tool_call_id: toolCall.id,
+          name: toolCall.name, // Required for Google provider
+        });
+      }
+    } else {
+      console.log('Final Response:', response.content);
+      break;
+    }
+
+    round++;
+  }
+}
+
+
 // Export all examples
 export {
   setupGlobalFetch,
@@ -345,7 +441,7 @@ export {
   exampleStreamingWithCustomFetch,
   createMockFetch,
   exampleWithMockFetch,
-  demonstrateFetchPriority
+  demonstrateFetchPriority,
 };
 
 // Example usage demonstration

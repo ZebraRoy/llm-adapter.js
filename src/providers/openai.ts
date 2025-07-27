@@ -113,7 +113,7 @@ export function createOpenAIAdapter(config: OpenAIConfig): LLMAdapter {
  */
 function formatOpenAIRequest(config: LLMConfig, defaultModel: string, stream = false): any {
   // Validate tool result messages
-  config.messages.forEach(validateToolResultMessage);
+  config.messages.forEach(msg => validateToolResultMessage(msg, 'openai'));
   
   // Validate conversation flow for OpenAI API
   validateOpenAIConversationFlow(config.messages, "OpenAI");
@@ -129,8 +129,7 @@ function formatOpenAIRequest(config: LLMConfig, defaultModel: string, stream = f
         return {
           role: "tool",
           content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
-          tool_call_id: msg.tool_call_id, // CRITICAL: Required field
-          name: msg.name, // Optional function name
+          tool_call_id: msg.tool_call_id,
         };
       }
       
@@ -138,13 +137,13 @@ function formatOpenAIRequest(config: LLMConfig, defaultModel: string, stream = f
       if (msg.role === "assistant" && msg.tool_calls) {
         return {
           role: "assistant",
-          content: typeof msg.content === "string" ? msg.content : null,
+          content: msg.content || null,
           tool_calls: msg.tool_calls.map(tc => ({
             id: tc.id,
             type: "function",
             function: {
               name: tc.name,
-              arguments: JSON.stringify(tc.input),
+              arguments: typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input),
             },
           })),
         };
@@ -152,9 +151,9 @@ function formatOpenAIRequest(config: LLMConfig, defaultModel: string, stream = f
       
       // Handle regular messages
       return {
-        role: msg.role === "tool_call" ? "assistant" : msg.role,
+        role: msg.role,
         content: typeof msg.content === "string" ? msg.content : 
-                 msg.content.map(c => ({ type: c.type, text: c.content })),
+                 (Array.isArray(msg.content) ? msg.content.map(c => ({ type: c.type, text: c.content })) : msg.content),
       };
     }),
     temperature: config.temperature,
@@ -184,17 +183,19 @@ function parseOpenAIResponse(data: any, requestConfig: LLMConfig): LLMResponse {
   
   const hasToolCalls = !!(message.tool_calls && message.tool_calls.length > 0);
   const hasText = !!(message.content && message.content.trim());
+
+  const toolCalls = hasToolCalls ? message.tool_calls.map((tc: any) => ({
+    id: tc.id,
+    name: tc.function.name,
+    input: JSON.parse(tc.function.arguments),
+  })) : undefined;
   
   return {
     service: requestConfig.service,
     model: data.model,
     content: message.content || "",
     reasoning: undefined, // OpenAI doesn't support reasoning
-    toolCalls: hasToolCalls ? message.tool_calls.map((tc: any) => ({
-      id: tc.id,
-      name: tc.function.name,
-      input: JSON.parse(tc.function.arguments),
-    })) : undefined,
+    toolCalls: toolCalls,
     capabilities: {
       hasText,
       hasReasoning: false, // OpenAI doesn't support reasoning
@@ -210,6 +211,7 @@ function parseOpenAIResponse(data: any, requestConfig: LLMConfig): LLMResponse {
       {
         role: "assistant",
         content: message.content || "",
+        tool_calls: toolCalls,
       },
     ],
   };
@@ -296,6 +298,7 @@ function createOpenAIStreamingResponse(
               {
                 role: "assistant",
                 content: collectedContent,
+                tool_calls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
               },
             ],
           };
