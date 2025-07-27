@@ -6,7 +6,8 @@ import {
   getDefaultFetch,
   type FetchFunction,
   type ServiceConfig,
-  type OpenAIConfig
+  type OpenAIConfig,
+  type Message
 } from './index.js';
 
 // ===== FETCH DEPENDENCY INJECTION EXAMPLES =====
@@ -336,7 +337,180 @@ export async function browserStreamingExample() {
   return stream;
 }
 
-// ===== TOOL CALL CHAIN EXAMPLE =====
+// ===== TOOL CALL CHAIN EXAMPLES =====
+
+
+/**
+ * Helper function to properly handle tool call chains across all providers
+ * Maintains conversation history consistency while handling provider-specific requirements
+ */
+export async function handleToolCallChain(
+  config: ServiceConfig,
+  maxRounds: number = 5
+): Promise<{
+  finalResponse: string;
+  conversationHistory: Message[];
+  totalRounds: number;
+}> {
+  let currentConfig = { ...config };
+  let round = 1;
+
+  while (round <= maxRounds) {
+    const response = await sendMessage(currentConfig);
+
+    if (response.toolCalls && response.toolCalls.length > 0) {
+      // Add assistant's response with tool calls to history
+      // Handle OpenAI's pattern where content can be null when tool_calls exist
+      const assistantMessage: Message = {
+        role: 'assistant',
+        ...(response.content && response.content.trim() && { content: response.content }),
+        ...(response.toolCalls && response.toolCalls.length > 0 && { tool_calls: response.toolCalls }),
+      };
+      
+      // Ensure message has either content or tool_calls (OpenAI requirement)
+      if (!assistantMessage.content && !assistantMessage.tool_calls) {
+        assistantMessage.content = ' '; // Minimal fallback
+      }
+      
+      currentConfig.messages.push(assistantMessage);
+
+      // Execute all tool calls and add results
+      for (const toolCall of response.toolCalls) {
+        try {
+          const result = await executeMockTool(toolCall);
+          
+          // Add tool result with provider-specific format
+          currentConfig.messages.push({
+            role: 'tool_result',
+            content: result,
+            tool_call_id: toolCall.id,
+            name: toolCall.name, // Required for Google Gemini
+          });
+        } catch (error) {
+          // Handle tool execution errors gracefully
+          currentConfig.messages.push({
+            role: 'tool_result',
+            content: `Error executing ${toolCall.name}: ${error.message}`,
+            tool_call_id: toolCall.id,
+            name: toolCall.name,
+          });
+        }
+      }
+    } else {
+      // Final response - add to history and return
+      currentConfig.messages.push({
+        role: 'assistant',
+        content: response.content || ' ', // Handle null content
+      });
+      
+      return {
+        finalResponse: response.content,
+        conversationHistory: currentConfig.messages,
+        totalRounds: round,
+      };
+    }
+
+    round++;
+  }
+
+  throw new Error(`Tool chain exceeded ${maxRounds} rounds without completion`);
+}
+
+/**
+ * Example: Streaming tool call chain with proper history management
+ */
+export async function streamingToolCallChainExample() {
+  const config: ServiceConfig = {
+    service: 'openai',
+    apiKey: 'your-openai-api-key',
+    model: 'gpt-4',
+    messages: [
+      {
+        role: 'user',
+        content: 'Research current market trends and provide analysis',
+      },
+    ],
+    tools: [
+      {
+        name: 'search_web',
+        description: 'Search the web for information',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Search query' },
+          },
+          required: ['query'],
+        },
+      },
+    ],
+  };
+
+  let round = 1;
+  const maxRounds = 5;
+
+  while (round <= maxRounds) {
+    console.log(`--- Streaming Round ${round} ---`);
+    const streamResponse = await streamMessage(config);
+    
+    let assistantMessage = '';
+    const toolCalls: ToolCall[] = [];
+
+    // Process streaming chunks
+    for await (const chunk of streamResponse.chunks) {
+      switch (chunk.type) {
+        case 'content':
+          assistantMessage += chunk.content;
+          process.stdout.write(chunk.content);
+          break;
+        
+        case 'tool_call':
+          if (chunk.toolCall) {
+            toolCalls.push(chunk.toolCall);
+          }
+          break;
+      }
+    }
+
+    if (toolCalls.length > 0) {
+      // Add assistant's message with tool calls
+      const message: Message = {
+        role: 'assistant',
+        ...(assistantMessage && assistantMessage.trim() && { content: assistantMessage }),
+        ...(toolCalls && toolCalls.length > 0 && { tool_calls: toolCalls }),
+      };
+      
+      // Ensure message has either content or tool_calls
+      if (!message.content && !message.tool_calls) {
+        message.content = ' '; // Minimal fallback
+      }
+      
+      config.messages.push(message);
+
+      // Execute tools and add results
+      for (const toolCall of toolCalls) {
+        const result = await executeMockTool(toolCall);
+        config.messages.push({
+          role: 'tool_result',
+          content: result,
+          tool_call_id: toolCall.id,
+          name: toolCall.name,
+        });
+      }
+    } else {
+      // Final response
+      config.messages.push({
+        role: 'assistant',
+        content: assistantMessage || ' ', // Handle empty content
+      });
+      console.log('\nStreaming complete!');
+      break;
+    }
+
+    round++;
+  }
+
+  return config.messages;
+}
 
 /**
  * Executes a tool call and returns a mock result.
@@ -358,6 +532,7 @@ async function executeMockTool(toolCall: { name: string; input: any }): Promise<
 
 /**
  * Example: Complete tool call chain with multiple rounds
+ * FIXED: Properly maintains conversation history without overwriting user messages
  */
 export async function toolCallChainExample() {
   const config: ServiceConfig = {
@@ -410,9 +585,22 @@ export async function toolCallChainExample() {
     const response = await sendMessage(config);
 
     if (response.toolCalls && response.toolCalls.length > 0) {
-      // IMPORTANT: Update history with the assistant's message, including tool calls
-      config.messages = response.messages;
+      // CORRECT: Add the assistant's response to existing history
+      // Handle OpenAI's pattern where content can be null when tool_calls exist
+      const assistantMessage: Message = {
+        role: 'assistant',
+        ...(response.content && response.content.trim() && { content: response.content }),
+        ...(response.toolCalls && response.toolCalls.length > 0 && { tool_calls: response.toolCalls }),
+      };
+      
+      // Ensure message has either content or tool_calls (OpenAI requirement)
+      if (!assistantMessage.content && !assistantMessage.tool_calls) {
+        assistantMessage.content = ' '; // Minimal fallback
+      }
+      
+      config.messages.push(assistantMessage);
 
+      // Execute tools and add results to conversation history
       for (const toolCall of response.toolCalls) {
         const result = await executeMockTool(toolCall);
         config.messages.push({
@@ -423,12 +611,20 @@ export async function toolCallChainExample() {
         });
       }
     } else {
+      // Add final response to history
+      config.messages.push({
+        role: 'assistant',
+        content: response.content || ' ', // Handle null content
+      });
       console.log('Final Response:', response.content);
       break;
     }
 
     round++;
   }
+
+  // Return the complete conversation history
+  return config.messages;
 }
 
 
