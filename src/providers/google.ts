@@ -8,7 +8,7 @@ import type {
   Usage 
 } from '../types/index.js';
 import type { LLMAdapter } from '../core/adapter.js';
-import { validateLLMConfig, sanitizeTools } from '../utils/validation.js';
+import { validateLLMConfig, sanitizeTools, validateToolResultMessage } from '../utils/validation.js';
 import { parseSSEStream } from '../utils/streaming.js';
 
 /**
@@ -93,13 +93,16 @@ export function createGoogleAdapter(config: GoogleConfig): LLMAdapter {
 }
 
 /**
- * Format request for Google Gemini API
+ * Format request for Google API
  * Internal function to convert unified config to Google format
  * @param config - Unified LLM configuration
  * @param defaultModel - Default model name
  * @returns Google API request body
  */
 function formatGoogleRequest(config: LLMConfig, defaultModel: string): any {
+  // Validate tool result messages
+  config.messages.forEach(validateToolResultMessage);
+
   const contents = config.messages.map(msg => {
     if (msg.role === "system") {
       // System messages go in systemInstruction, not contents
@@ -108,6 +111,9 @@ function formatGoogleRequest(config: LLMConfig, defaultModel: string): any {
     
     // Handle tool result messages
     if (msg.role === "tool_result") {
+      if (!msg.tool_call_id) {
+        throw new Error("Tool result message must have tool_call_id for Google API");
+      }
       return {
         role: "user",
         parts: [
@@ -121,7 +127,7 @@ function formatGoogleRequest(config: LLMConfig, defaultModel: string): any {
         ]
       };
     }
-    
+
     // Handle assistant messages with tool calls
     if (msg.role === "assistant" && msg.tool_calls) {
       const parts = [];
@@ -178,17 +184,17 @@ function formatGoogleRequest(config: LLMConfig, defaultModel: string): any {
     body.systemInstruction = systemInstruction;
   }
   
-  // Add tools if provided
+  // Add tools if provided - use Google-specific sanitization
   if (config.tools && config.tools.length > 0) {
     body.tools = [{
-      function_declarations: sanitizeTools(config.tools).map(tool => ({
+      function_declarations: sanitizeTools(config.tools, 'google').map(tool => ({
         name: tool.name,
         description: tool.description,
         parameters: tool.parameters,
       }))
     }];
   }
-  
+
   return body;
 }
 

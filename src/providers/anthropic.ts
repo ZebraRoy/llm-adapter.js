@@ -8,7 +8,7 @@ import type {
   Usage 
 } from '../types/index.js';
 import type { LLMAdapter } from '../core/adapter.js';
-import { validateLLMConfig, sanitizeTools } from '../utils/validation.js';
+import { validateLLMConfig, sanitizeTools, validateToolResultMessage } from '../utils/validation.js';
 import { parseSSEStream } from '../utils/streaming.js';
 
 /**
@@ -112,6 +112,9 @@ export function createAnthropicAdapter(config: AnthropicConfig): LLMAdapter {
  * @returns Anthropic API request body
  */
 function formatAnthropicRequest(config: LLMConfig, defaultModel: string, enableThinking?: boolean, stream = false): any {
+  // Validate tool result messages
+  config.messages.forEach(validateToolResultMessage);
+
   // Separate system messages from regular messages
   const systemMessages = config.messages.filter(msg => msg.role === "system");
   const chatMessages = config.messages.filter(msg => msg.role !== "system");
@@ -121,6 +124,9 @@ function formatAnthropicRequest(config: LLMConfig, defaultModel: string, enableT
     messages: chatMessages.map(msg => {
       // Handle tool result messages (role: "tool_result" -> "user" with tool_result content)
       if (msg.role === "tool_result") {
+        if (!msg.tool_call_id) {
+          throw new Error("Tool result message must have tool_call_id for Anthropic API");
+        }
         return {
           role: "user",
           content: [

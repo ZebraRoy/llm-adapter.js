@@ -357,6 +357,7 @@ async function handleToolCallConversation() {
     config.messages.push({
       role: "assistant",
       content: response.content || "", // May be empty if only tool calls
+      tool_calls: response.toolCalls, // CRITICAL: Include structured tool calls
     });
 
     // Step 3: Execute each tool call and add results to conversation
@@ -382,18 +383,12 @@ async function handleToolCallConversation() {
 
       console.log(`  - Result: ${toolResult}`);
 
-      // Add tool call to conversation history
-      config.messages.push({
-        role: "tool_call",
-        content: `Called ${toolCall.name} with ${JSON.stringify(
-          toolCall.input
-        )}`,
-      });
-
       // Add tool result to conversation history
       config.messages.push({
         role: "tool_result",
         content: toolResult,
+        tool_call_id: toolCall.id, // CRITICAL: Link result to specific tool call
+        name: toolCall.name, // Optional: function name for debugging
       });
     }
 
@@ -469,27 +464,23 @@ class ToolCallConversation {
 
     // Handle tool calls if present
     while (hasToolCalls(response)) {
-      // Add assistant's message (may contain both text and tool calls)
+      // Add assistant's message with tool calls
       this.config.messages.push({
         role: "assistant",
         content: response.content || "",
+        tool_calls: response.toolCalls, // CRITICAL: Include structured tool calls
       });
 
       // Execute all tool calls
       for (const toolCall of response.toolCalls) {
         const result = await this.executeTool(toolCall.name, toolCall.input);
 
-        // Add tool call and result to conversation
-        this.config.messages.push({
-          role: "tool_call",
-          content: `Called ${toolCall.name} with ${JSON.stringify(
-            toolCall.input
-          )}`,
-        });
-
+        // Add tool result to conversation
         this.config.messages.push({
           role: "tool_result",
           content: result,
+          tool_call_id: toolCall.id, // CRITICAL: Link result to specific tool call
+          name: toolCall.name, // Optional: function name for debugging
         });
       }
 
@@ -557,18 +548,18 @@ async function multiTurnExample() {
 2. **Maintain conversation history** by adding all messages in the correct order:
 
    - User message
-   - Assistant message (may be empty if only tool calls)
-   - Tool call messages (`role: "tool_call"`)
-   - Tool result messages (`role: "tool_result"`)
+   - Assistant message with `tool_calls` property (contains structured tool call data)
+   - Tool result messages (`role: "tool_result"` with `tool_call_id` linking to specific calls)
    - Final assistant response
 
 3. **Handle multiple tool calls** - The LLM might call several tools at once
 
 4. **Continue the conversation** after tool execution by sending the updated message history back
 
-5. **Use proper message roles**:
-   - `"tool_call"` for the tool invocation
-   - `"tool_result"` for the tool's response
+5. **Use proper message structure**:
+   - Assistant messages include `tool_calls` array for tool invocations
+   - Tool result messages must include `tool_call_id` to match the corresponding tool call
+   - Tool result messages use `role: "tool_result"`
 
 This pattern ensures that the LLM has full context of what tools were called and their results, enabling natural follow-up conversations.
 

@@ -8,7 +8,7 @@ import type {
   Usage 
 } from '../types/index.js';
 import type { LLMAdapter } from '../core/adapter.js';
-import { validateLLMConfig, sanitizeTools } from '../utils/validation.js';
+import { validateLLMConfig, sanitizeTools, validateToolResultMessage, validateOpenAIConversationFlow } from '../utils/validation.js';
 import { parseSSEStream } from '../utils/streaming.js';
 
 /**
@@ -101,11 +101,20 @@ export function createDeepSeekAdapter(config: DeepSeekConfig): LLMAdapter {
  * @returns DeepSeek API request body
  */
 function formatDeepSeekRequest(config: LLMConfig, defaultModel: string, stream = false): any {
+  // Validate tool result messages
+  config.messages.forEach(validateToolResultMessage);
+  
+  // Validate conversation flow for DeepSeek API
+  validateOpenAIConversationFlow(config.messages, "DeepSeek");
+
   const body: any = {
     model: config.model || defaultModel,
     messages: config.messages.map(msg => {
       // Handle tool result messages (role: "tool_result" -> "tool")
       if (msg.role === "tool_result") {
+        if (!msg.tool_call_id) {
+          throw new Error("Tool result message must have tool_call_id for DeepSeek API");
+        }
         return {
           role: "tool",
           content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
