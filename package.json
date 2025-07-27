@@ -38,12 +38,10 @@
   ],
   "author": "ZebraRoy",
   "license": "MIT",
-  "dependencies": {
-    "tsup": "^8.5.0",
-    "typescript": "^5.8.3"
-  },
   "devDependencies": {
     "@vitest/coverage-v8": "^2.1.9",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
     "vitest": "^2.1.9"
   }
 }

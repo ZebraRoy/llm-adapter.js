@@ -1,7 +1,6 @@
 import {
   sendMessage,
   streamMessage,
-  askQuestion,
   setDefaultFetch,
   getDefaultFetch,
   type FetchFunction,
