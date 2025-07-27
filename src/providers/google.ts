@@ -1,13 +1,358 @@
-import type { GoogleConfig } from '../types/index.js';
+import type { 
+  GoogleConfig, 
+  LLMConfig, 
+  LLMResponse, 
+  StreamingResponse, 
+  StreamChunk,
+  ToolCall,
+  Usage 
+} from '../types/index.js';
 import type { LLMAdapter } from '../core/adapter.js';
+import { validateLLMConfig, sanitizeTools } from '../utils/validation.js';
+import { parseSSEStream } from '../utils/streaming.js';
 
 /**
- * Google adapter - handles query param auth, Gemini format
- * TODO: Move full implementation from original index.ts
+ * Google adapter - handles API key auth, Gemini format
+ * Internal function that creates a Google Gemini-compatible adapter
  * @param config - Google configuration
  * @returns LLM adapter for Google
  */
 export function createGoogleAdapter(config: GoogleConfig): LLMAdapter {
-  // Temporary stub - full implementation would be moved from original file
-  throw new Error("Google adapter not yet fully implemented in refactored structure");
+  const baseUrl = config.baseUrl || "https://generativelanguage.googleapis.com/v1beta";
+  
+  return {
+    async call(requestConfig: LLMConfig): Promise<LLMResponse> {
+      const fetchFn = requestConfig.fetch || globalThis.fetch;
+      const headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": config.apiKey,
+      };
+      
+      const body = formatGoogleRequest(requestConfig, config.model);
+      
+      const response = await fetchFn(`${baseUrl}/models/${config.model}:generateContent`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Google API error: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      return parseGoogleResponse(data, requestConfig);
+    },
+    
+    async stream(requestConfig: LLMConfig): Promise<StreamingResponse> {
+      const fetchFn = requestConfig.fetch || globalThis.fetch;
+      const headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": config.apiKey,
+      };
+      
+      const body = formatGoogleRequest(requestConfig, config.model);
+      
+      const response = await fetchFn(`${baseUrl}/models/${config.model}:streamGenerateContent?alt=sse`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Google API error: ${response.status} ${response.statusText}`);
+      }
+      
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("No response body");
+      }
+      
+      return createGoogleStreamingResponse(requestConfig, reader);
+    },
+    
+    validateConfig(requestConfig: LLMConfig): boolean {
+      try {
+        validateLLMConfig(requestConfig);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
+/**
+ * Format request for Google Gemini API
+ * Internal function to convert unified config to Google format
+ * @param config - Unified LLM configuration
+ * @param defaultModel - Default model name
+ * @returns Google API request body
+ */
+function formatGoogleRequest(config: LLMConfig, defaultModel: string): any {
+  const contents = config.messages.map(msg => {
+    if (msg.role === "system") {
+      // System messages go in systemInstruction, not contents
+      return null;
+    }
+    
+    // Handle tool result messages
+    if (msg.role === "tool_result") {
+      return {
+        role: "user",
+        parts: [
+          {
+            functionResponse: {
+              name: msg.name, // Function name
+              response: typeof msg.content === "string" ? 
+                { result: msg.content } : msg.content,
+            }
+          }
+        ]
+      };
+    }
+    
+    // Handle assistant messages with tool calls
+    if (msg.role === "assistant" && msg.tool_calls) {
+      const parts = [];
+      
+      // Add text content if present
+      if (msg.content && typeof msg.content === "string" && msg.content.trim()) {
+        parts.push({ text: msg.content });
+      }
+      
+      // Add function calls
+      msg.tool_calls.forEach(tc => {
+        parts.push({
+          functionCall: {
+            name: tc.name,
+            args: tc.input,
+          }
+        });
+      });
+      
+      return {
+        role: "model",
+        parts,
+      };
+    }
+    
+    // Handle regular messages
+    const role = msg.role === "assistant" ? "model" : "user";
+    const parts = [{ 
+      text: typeof msg.content === "string" ? msg.content : 
+            JSON.stringify(msg.content) 
+    }];
+    
+    return {
+      role,
+      parts
+    };
+  }).filter(Boolean);
+
+  // Extract system instruction if present
+  const systemMessage = config.messages.find(msg => msg.role === "system");
+  const systemInstruction = systemMessage ? {
+    parts: [{ text: systemMessage.content }]
+  } : undefined;
+  
+  const body: any = {
+    contents,
+    generationConfig: {
+      temperature: config.temperature,
+      maxOutputTokens: config.maxTokens,
+    }
+  };
+  
+  if (systemInstruction) {
+    body.systemInstruction = systemInstruction;
+  }
+  
+  // Add tools if provided
+  if (config.tools && config.tools.length > 0) {
+    body.tools = [{
+      function_declarations: sanitizeTools(config.tools).map(tool => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      }))
+    }];
+  }
+  
+  return body;
+}
+
+/**
+ * Parse Google API response
+ * Internal function to convert Google response to unified format
+ * @param data - Raw Google API response
+ * @param requestConfig - Original request configuration
+ * @returns Unified LLM response
+ */
+function parseGoogleResponse(data: any, requestConfig: LLMConfig): LLMResponse {
+  const candidate = data.candidates?.[0];
+  if (!candidate) {
+    throw new Error("No candidates in response");
+  }
+  
+  const content = candidate.content;
+  let responseText = "";
+  let toolCalls: ToolCall[] = [];
+  
+  if (content?.parts) {
+    for (const part of content.parts) {
+      if (part.text) {
+        responseText += part.text;
+      }
+      if (part.functionCall) {
+        toolCalls.push({
+          id: `call_${Math.random().toString(36).substring(2, 15)}_${Date.now()}`, // More robust ID generation
+          name: part.functionCall.name,
+          input: part.functionCall.args || {},
+        });
+      }
+    }
+  }
+  
+  const hasToolCalls = toolCalls.length > 0;
+  const hasText = !!responseText.trim();
+  
+  return {
+    service: requestConfig.service,
+    model: requestConfig.model || "gemini-pro",
+    content: responseText,
+    reasoning: undefined, // Google doesn't expose reasoning in standard API
+    toolCalls: hasToolCalls ? toolCalls : undefined,
+    capabilities: {
+      hasText,
+      hasReasoning: false, // Google doesn't expose reasoning in standard API
+      hasToolCalls,
+    },
+    usage: {
+      input_tokens: data.usageMetadata?.promptTokenCount || 0,
+      output_tokens: data.usageMetadata?.candidatesTokenCount || 0,
+      total_tokens: data.usageMetadata?.totalTokenCount || 0,
+    },
+    messages: [
+      ...requestConfig.messages,
+      {
+        role: "assistant",
+        content: responseText,
+      },
+    ],
+  };
+}
+
+/**
+ * Create streaming response handler for Google
+ * Internal function to handle Google streaming responses
+ * @param requestConfig - Original request configuration
+ * @param reader - Response stream reader
+ * @returns Streaming response wrapper
+ */
+function createGoogleStreamingResponse(
+  requestConfig: LLMConfig, 
+  reader: ReadableStreamDefaultReader<Uint8Array>
+): StreamingResponse {
+  let collectedContent = "";
+  let collectedToolCalls: ToolCall[] = [];
+  let usage: Usage | undefined;
+  
+  const chunks = async function* (): AsyncGenerator<StreamChunk> {
+    for await (const chunk of parseSSEStream(reader)) {
+      try {
+        const data = JSON.parse(chunk);
+        const candidate = data.candidates?.[0];
+        
+        if (!candidate?.content?.parts) continue;
+        
+        for (const part of candidate.content.parts) {
+          if (part.text) {
+            collectedContent += part.text;
+            yield {
+              type: "content",
+              content: part.text,
+            };
+          }
+          
+          if (part.functionCall) {
+            const newToolCall: ToolCall = {
+              id: `call_${Math.random().toString(36).substring(2, 15)}_${Date.now()}`, // More robust ID generation
+              name: part.functionCall.name,
+              input: part.functionCall.args || {},
+            };
+            collectedToolCalls.push(newToolCall);
+            yield {
+              type: "tool_call",
+              toolCall: newToolCall,
+            };
+          }
+        }
+        
+        if (data.usageMetadata) {
+          usage = {
+            input_tokens: data.usageMetadata.promptTokenCount || 0,
+            output_tokens: data.usageMetadata.candidatesTokenCount || 0,
+            total_tokens: data.usageMetadata.totalTokenCount || 0,
+          };
+          yield {
+            type: "usage",
+            usage,
+          };
+        }
+        
+        if (candidate.finishReason) {
+          const finalResponse: LLMResponse = {
+            service: requestConfig.service,
+            model: requestConfig.model || "gemini-pro",
+            content: collectedContent,
+            reasoning: undefined, // Google doesn't expose reasoning in standard API
+            toolCalls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
+            capabilities: {
+              hasText: !!collectedContent.trim(),
+              hasReasoning: false,
+              hasToolCalls: collectedToolCalls.length > 0,
+            },
+            usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+            messages: [
+              ...requestConfig.messages,
+              {
+                role: "assistant",
+                content: collectedContent,
+              },
+            ],
+          };
+          
+          yield {
+            type: "complete",
+            finalResponse,
+          };
+        }
+      } catch (error) {
+        console.error("Error parsing Google stream chunk:", error);
+      }
+    }
+  };
+  
+  return {
+    service: requestConfig.service,
+    model: requestConfig.model || "gemini-pro",
+    chunks: chunks(),
+    async collect(): Promise<LLMResponse> {
+      let finalResponse: LLMResponse | undefined;
+      
+      for await (const chunk of chunks()) {
+        if (chunk.type === "complete" && chunk.finalResponse) {
+          finalResponse = chunk.finalResponse;
+          break;
+        }
+      }
+      
+      if (!finalResponse) {
+        throw new Error("Stream ended without final response");
+      }
+      
+      return finalResponse;
+    },
+  };
 } 

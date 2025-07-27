@@ -1,3 +1,5 @@
+import type { ToolCall } from './tools.js';
+
 // ===== CORE TYPES =====
 
 /**
@@ -39,6 +41,12 @@ export interface Message {
   role: MessageRole;
   /** The content of the message - can be simple text or structured content */
   content: string | MessageContent[];
+  /** Tool call ID for tool result messages (OpenAI-compatible APIs) */
+  tool_call_id?: string;
+  /** Tool calls made by assistant (for OpenAI-compatible APIs) */
+  tool_calls?: ToolCall[];
+  /** Function name for tool result messages (OpenAI legacy) */
+  name?: string;
 }
 
 /**

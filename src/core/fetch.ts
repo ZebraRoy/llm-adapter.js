@@ -3,7 +3,7 @@ import type { FetchFunction } from '../types/index.js';
 // ===== FETCH DEPENDENCY INJECTION =====
 
 // Global default fetch - can be overridden
-let globalFetch: FetchFunction = globalThis.fetch;
+let globalFetch: FetchFunction | undefined = undefined;
 
 /**
  * Set the default fetch implementation for all LLM calls
@@ -20,5 +20,5 @@ export function setDefaultFetch(fetchImpl: FetchFunction): void {
  * @returns The current default fetch function
  */
 export function getDefaultFetch(): FetchFunction {
-  return globalFetch;
+  return globalFetch || globalThis.fetch;
 } 

@@ -8,7 +8,7 @@ import type {
   Usage 
 } from '../types/index.js';
 import type { LLMAdapter } from '../core/adapter.js';
-import { validateLLMConfig } from '../utils/validation.js';
+import { validateLLMConfig, sanitizeTools } from '../utils/validation.js';
 import { parseSSEStream } from '../utils/streaming.js';
 
 /**
@@ -108,16 +108,60 @@ function formatAnthropicRequest(config: LLMConfig, defaultModel: string, enableT
   
   return {
     model: config.model || defaultModel,
-    messages: chatMessages.map(msg => ({
-      role: msg.role === "tool_call" ? "assistant" : 
-            msg.role === "tool_result" ? "user" : msg.role,
-      content: typeof msg.content === "string" ? msg.content : 
-               msg.content.map(c => ({ type: c.type, text: c.content })),
-    })),
+    messages: chatMessages.map(msg => {
+      // Handle tool result messages (role: "tool_result" -> "user" with tool_result content)
+      if (msg.role === "tool_result") {
+        return {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: msg.tool_call_id, // CRITICAL: Required field for Anthropic
+              content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+            }
+          ],
+        };
+      }
+      
+      // Handle assistant messages with tool calls
+      if (msg.role === "assistant" && msg.tool_calls) {
+        const content = [];
+        
+        // Add text content if present
+        if (msg.content && typeof msg.content === "string" && msg.content.trim()) {
+          content.push({
+            type: "text",
+            text: msg.content,
+          });
+        }
+        
+        // Add tool use blocks
+        msg.tool_calls.forEach(tc => {
+          content.push({
+            type: "tool_use",
+            id: tc.id,
+            name: tc.name,
+            input: tc.input,
+          });
+        });
+        
+        return {
+          role: "assistant",
+          content,
+        };
+      }
+      
+      // Handle regular messages
+      return {
+        role: msg.role === "tool_call" ? "assistant" : msg.role,
+        content: typeof msg.content === "string" ? msg.content : 
+                 msg.content.map(c => ({ type: c.type, text: c.content })),
+      };
+    }),
     system: systemMessages.map(msg => msg.content).join("\n") || undefined,
     temperature: config.temperature,
     max_tokens: config.maxTokens || 4096,
-    tools: config.tools ? config.tools.map(tool => ({
+    tools: config.tools ? sanitizeTools(config.tools).map(tool => ({
       name: tool.name,
       description: tool.description,
       input_schema: tool.parameters,

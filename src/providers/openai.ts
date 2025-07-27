@@ -8,7 +8,7 @@ import type {
   Usage 
 } from '../types/index.js';
 import type { LLMAdapter } from '../core/adapter.js';
-import { validateLLMConfig } from '../utils/validation.js';
+import { validateLLMConfig, sanitizeTools } from '../utils/validation.js';
 import { parseSSEStream } from '../utils/streaming.js';
 
 /**
@@ -30,6 +30,7 @@ export function createOpenAIAdapter(config: OpenAIConfig): LLMAdapter {
       
       const body = formatOpenAIRequest(requestConfig, config.model);
       
+      // Make the request
       const response = await fetchFn(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers,
@@ -37,7 +38,15 @@ export function createOpenAIAdapter(config: OpenAIConfig): LLMAdapter {
       });
       
       if (!response.ok) {
-        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+        // Handle error response body if available
+        let errorMessage = `OpenAI API error: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage += ` - ${errorData.error?.message || response.statusText}`;
+        } catch {
+          errorMessage += ` ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
       
       const data = await response.json();
@@ -93,15 +102,43 @@ export function createOpenAIAdapter(config: OpenAIConfig): LLMAdapter {
 function formatOpenAIRequest(config: LLMConfig, defaultModel: string, stream = false): any {
   return {
     model: config.model || defaultModel,
-    messages: config.messages.map(msg => ({
-      role: msg.role === "tool_call" ? "assistant" : 
-            msg.role === "tool_result" ? "tool" : msg.role,
-      content: typeof msg.content === "string" ? msg.content : 
-               msg.content.map(c => ({ type: c.type, text: c.content })),
-    })),
+    messages: config.messages.map(msg => {
+      // Handle tool result messages (role: "tool_result" -> "tool")
+      if (msg.role === "tool_result") {
+        return {
+          role: "tool",
+          content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+          tool_call_id: msg.tool_call_id, // CRITICAL: Required field
+          name: msg.name, // Optional function name
+        };
+      }
+      
+      // Handle assistant messages with tool calls
+      if (msg.role === "assistant" && msg.tool_calls) {
+        return {
+          role: "assistant",
+          content: typeof msg.content === "string" ? msg.content : null,
+          tool_calls: msg.tool_calls.map(tc => ({
+            id: tc.id,
+            type: "function",
+            function: {
+              name: tc.name,
+              arguments: JSON.stringify(tc.input),
+            },
+          })),
+        };
+      }
+      
+      // Handle regular messages
+      return {
+        role: msg.role === "tool_call" ? "assistant" : msg.role,
+        content: typeof msg.content === "string" ? msg.content : 
+                 msg.content.map(c => ({ type: c.type, text: c.content })),
+      };
+    }),
     temperature: config.temperature,
     max_tokens: config.maxTokens,
-    tools: config.tools ? config.tools.map(tool => ({
+    tools: config.tools ? sanitizeTools(config.tools).map(tool => ({
       type: "function",
       function: {
         name: tool.name,
@@ -131,6 +168,7 @@ function parseOpenAIResponse(data: any, requestConfig: LLMConfig): LLMResponse {
     service: requestConfig.service,
     model: data.model,
     content: message.content || "",
+    reasoning: undefined, // OpenAI doesn't support reasoning
     toolCalls: hasToolCalls ? message.tool_calls.map((tc: any) => ({
       id: tc.id,
       name: tc.function.name,
@@ -224,6 +262,7 @@ function createOpenAIStreamingResponse(
             service: requestConfig.service,
             model: data.model,
             content: collectedContent,
+            reasoning: undefined, // OpenAI doesn't support reasoning
             toolCalls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
             capabilities: {
               hasText: !!collectedContent.trim(),

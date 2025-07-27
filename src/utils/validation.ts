@@ -48,3 +48,26 @@ export function validateLLMConfig(config: LLMConfig): void {
     throw new Error("At least one message is required");
   }
 } 
+
+/**
+ * Sanitize tool definition to remove non-standard fields
+ * Ensures only standard fields are sent to providers
+ * @param tool - Tool definition to sanitize
+ * @returns Sanitized tool definition
+ */
+export function sanitizeToolDefinition(tool: any): any {
+  return {
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+  };
+}
+
+/**
+ * Sanitize tools array for API requests
+ * @param tools - Array of tool definitions
+ * @returns Sanitized tools array
+ */
+export function sanitizeTools(tools: any[]): any[] {
+  return tools.map(sanitizeToolDefinition);
+} 

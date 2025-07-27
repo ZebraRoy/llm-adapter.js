@@ -24,6 +24,9 @@
   ],
   "scripts": {
     "build": "tsup",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -38,5 +41,9 @@
   "dependencies": {
     "tsup": "^8.5.0",
     "typescript": "^5.8.3"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.9",
+    "vitest": "^2.1.9"
   }
 }
