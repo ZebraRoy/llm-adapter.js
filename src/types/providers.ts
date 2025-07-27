@@ -16,6 +16,8 @@ export interface OpenAIConfig extends Omit<LLMConfig, 'service'> {
   baseUrl?: string;
   /** Custom fetch implementation */
   fetch?: FetchFunction;
+  /** Enable browser-specific API handling */
+  isBrowser?: boolean;
 }
 
 /**
@@ -33,6 +35,8 @@ export interface AnthropicConfig extends Omit<LLMConfig, 'service'> {
   enableThinking?: boolean;
   /** Custom fetch implementation */
   fetch?: FetchFunction;
+  /** Enable browser-specific API handling */
+  isBrowser?: boolean;
 }
 
 /**
@@ -48,6 +52,8 @@ export interface GoogleConfig extends Omit<LLMConfig, 'service'> {
   baseUrl?: string;
   /** Custom fetch implementation */
   fetch?: FetchFunction;
+  /** Enable browser-specific API handling */
+  isBrowser?: boolean;
 }
 
 /**
@@ -61,6 +67,8 @@ export interface OllamaConfig extends Omit<LLMConfig, 'service'> {
   baseUrl?: string;
   /** Custom fetch implementation */
   fetch?: FetchFunction;
+  /** Enable browser-specific API handling */
+  isBrowser?: boolean;
 }
 
 /**
@@ -76,6 +84,8 @@ export interface GroqConfig extends Omit<LLMConfig, 'service'> {
   baseUrl?: string;
   /** Custom fetch implementation */
   fetch?: FetchFunction;
+  /** Enable browser-specific API handling */
+  isBrowser?: boolean;
 }
 
 /**
@@ -91,6 +101,8 @@ export interface DeepSeekConfig extends Omit<LLMConfig, 'service'> {
   baseUrl?: string;
   /** Custom fetch implementation */
   fetch?: FetchFunction;
+  /** Enable browser-specific API handling */
+  isBrowser?: boolean;
 }
 
 /**
@@ -106,6 +118,8 @@ export interface XAIConfig extends Omit<LLMConfig, 'service'> {
   baseUrl?: string;
   /** Custom fetch implementation */
   fetch?: FetchFunction;
+  /** Enable browser-specific API handling */
+  isBrowser?: boolean;
 }
 
 /**

@@ -28,4 +28,6 @@ export interface LLMConfig {
   systemPrompt?: string;
   /** Custom fetch implementation for this request */
   fetch?: FetchFunction;
+  /** Enable browser-specific API handling (adds required headers for browser requests) */
+  isBrowser?: boolean;
 } 

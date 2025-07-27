@@ -36,6 +36,7 @@ export async function sendMessage(
     temperature?: number;
     maxTokens?: number;
     fetch?: FetchFunction; // Optional fetch override for this call
+    isBrowser?: boolean; // Enable browser-specific API handling
   }
 ): Promise<LLMResponse> {
   const adapter = createAdapter(config);
@@ -46,6 +47,7 @@ export async function sendMessage(
     temperature: options?.temperature ?? config.temperature,
     maxTokens: options?.maxTokens ?? config.maxTokens,
     fetch: options?.fetch || config.fetch || getDefaultFetch(),
+    isBrowser: options?.isBrowser ?? config.isBrowser,
   };
   
   return adapter.call(requestConfig);
@@ -79,6 +81,7 @@ export async function streamMessage(
     temperature?: number;
     maxTokens?: number;
     fetch?: FetchFunction; // Optional fetch override for this call
+    isBrowser?: boolean; // Enable browser-specific API handling
   }
 ): Promise<StreamingResponse> {
   const adapter = createAdapter(config);
@@ -89,6 +92,7 @@ export async function streamMessage(
     temperature: options?.temperature ?? config.temperature,
     maxTokens: options?.maxTokens ?? config.maxTokens,
     fetch: options?.fetch || config.fetch || getDefaultFetch(),
+    isBrowser: options?.isBrowser ?? config.isBrowser,
   };
   
   return adapter.stream(requestConfig);
@@ -120,6 +124,7 @@ export async function askQuestion(
     temperature?: number;
     maxTokens?: number;
     fetch?: FetchFunction; // Optional fetch override for this call
+    isBrowser?: boolean; // Enable browser-specific API handling
   }
 ): Promise<LLMResponse> {
   const messages: Message[] = [];
@@ -136,6 +141,7 @@ export async function askQuestion(
     ...config,
     messages,
     fetch: options?.fetch || config.fetch || getDefaultFetch(),
+    isBrowser: options?.isBrowser,
   } as ServiceConfig;
   
   return sendMessage(fullConfig, {
@@ -143,6 +149,7 @@ export async function askQuestion(
     temperature: options?.temperature,
     maxTokens: options?.maxTokens,
     fetch: options?.fetch,
+    isBrowser: options?.isBrowser,
   });
 }
 
@@ -176,6 +183,7 @@ export async function streamQuestion(
     temperature?: number;
     maxTokens?: number;
     fetch?: FetchFunction; // Optional fetch override for this call
+    isBrowser?: boolean; // Enable browser-specific API handling
   }
 ): Promise<StreamingResponse> {
   const messages: Message[] = [];
@@ -192,6 +200,7 @@ export async function streamQuestion(
     ...config,
     messages,
     fetch: options?.fetch || config.fetch || getDefaultFetch(),
+    isBrowser: options?.isBrowser,
   } as ServiceConfig;
   
   return streamMessage(fullConfig, {
@@ -199,5 +208,6 @@ export async function streamQuestion(
     temperature: options?.temperature,
     maxTokens: options?.maxTokens,
     fetch: options?.fetch,
+    isBrowser: options?.isBrowser,
   });
 } 

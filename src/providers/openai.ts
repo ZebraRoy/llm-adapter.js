@@ -23,10 +23,17 @@ export function createOpenAIAdapter(config: OpenAIConfig): LLMAdapter {
   return {
     async call(requestConfig: LLMConfig): Promise<LLMResponse> {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
-      const headers = {
+      const headers: Record<string, string> = {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${config.apiKey}`,
       };
+      
+      // OpenAI API doesn't officially support CORS for browser requests
+      // Users may need to use a proxy server for browser-based applications
+      if (requestConfig.isBrowser || config.isBrowser) {
+        // No specific headers needed, but CORS may still be blocked
+        console.warn("OpenAI API may not work directly from browsers due to CORS policy. Consider using a proxy server.");
+      }
       
       const body = formatOpenAIRequest(requestConfig, config.model);
       
@@ -55,10 +62,15 @@ export function createOpenAIAdapter(config: OpenAIConfig): LLMAdapter {
     
     async stream(requestConfig: LLMConfig): Promise<StreamingResponse> {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
-      const headers = {
+      const headers: Record<string, string> = {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${config.apiKey}`,
       };
+      
+      // OpenAI API doesn't officially support CORS for browser requests
+      if (requestConfig.isBrowser || config.isBrowser) {
+        console.warn("OpenAI API may not work directly from browsers due to CORS policy. Consider using a proxy server.");
+      }
       
       const body = formatOpenAIRequest(requestConfig, config.model, true);
       

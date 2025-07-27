@@ -8,6 +8,7 @@ A unified TypeScript library for working with multiple LLM providers through a c
 - 🔄 **Streaming Support** - Real-time response streaming for all providers
 - 🛠️ **Tool Calling** - Function calling support where available
 - 🧠 **Reasoning Support** - Access to reasoning/thinking content (Anthropic, DeepSeek)
+- 🌐 **Browser Support** - Built-in browser compatibility with provider-specific CORS handling
 - 🎯 **Type Safety** - Full TypeScript support with detailed types
 - 🔌 **Dependency Injection** - Customizable fetch implementation for testing and advanced use cases
 - ⚡ **Modern** - Built with modern ES modules and async/await
@@ -867,6 +868,65 @@ function handleResponse(response: LLMResponse) {
 }
 ```
 
+## Browser Support
+
+The library includes built-in browser support with provider-specific CORS handling. Use the `isBrowser` parameter to enable browser-specific optimizations and headers.
+
+### Anthropic Browser Usage
+
+Anthropic supports direct browser usage with the required header:
+
+```typescript
+import { sendMessage } from "llm-adapter";
+
+const response = await sendMessage({
+  service: "anthropic",
+  apiKey: "your-api-key",
+  model: "claude-3-sonnet-20240229",
+  messages: [{ role: "user", content: "Hello from browser!" }],
+  isBrowser: true, // Adds anthropic-dangerous-direct-browser-access header
+});
+```
+
+### Other Providers in Browser
+
+Most other providers have CORS restrictions for direct browser usage. The library will show helpful warnings:
+
+```typescript
+const response = await sendMessage({
+  service: "openai", // Will show CORS warning
+  apiKey: "your-api-key",
+  model: "gpt-4",
+  messages: [{ role: "user", content: "Hello" }],
+  isBrowser: true, // Shows warning about proxy server usage
+});
+```
+
+### Browser-Compatible Providers
+
+- **✅ Anthropic**: Full support with `isBrowser: true`
+- **✅ Ollama**: Works if your local server has CORS enabled
+- **⚠️ OpenAI, Google, Groq, DeepSeek, xAI**: Require proxy server due to CORS policy
+
+### Using with Ask Functions
+
+```typescript
+import { askQuestion } from "llm-adapter";
+
+const response = await askQuestion(
+  {
+    service: "anthropic",
+    apiKey: "your-api-key",
+    model: "claude-3-sonnet-20240229",
+  },
+  "What is TypeScript?",
+  {
+    isBrowser: true, // Enable browser-specific handling
+    systemPrompt: "Be concise and helpful",
+  }
+);
+```
+
 ## Complete API Reference
 
 ### Main Functions
@@ -895,6 +955,7 @@ All functions support these options:
 - `temperature?: number` - Response randomness (0.0 to 1.0)
 - `maxTokens?: number` - Maximum tokens to generate
 - `fetch?: FetchFunction` - Custom fetch implementation for this call
+- `isBrowser?: boolean` - Enable browser-specific API handling and headers
 
 ## Examples Repository
 

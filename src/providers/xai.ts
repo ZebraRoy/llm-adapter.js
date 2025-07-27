@@ -23,10 +23,15 @@ export function createXAIAdapter(config: XAIConfig): LLMAdapter {
   return {
     async call(requestConfig: LLMConfig): Promise<LLMResponse> {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
-      const headers = {
+      const headers: Record<string, string> = {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${config.apiKey}`,
       };
+      
+      // xAI API may have CORS restrictions for browser requests
+      if (requestConfig.isBrowser || config.isBrowser) {
+        console.warn("xAI API may not work directly from browsers due to CORS policy. Consider using a proxy server.");
+      }
       
       const body = formatOpenAIRequest(requestConfig, config.model);
       
@@ -46,10 +51,15 @@ export function createXAIAdapter(config: XAIConfig): LLMAdapter {
     
     async stream(requestConfig: LLMConfig): Promise<StreamingResponse> {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
-      const headers = {
+      const headers: Record<string, string> = {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${config.apiKey}`,
       };
+      
+      // xAI API may have CORS restrictions for browser requests
+      if (requestConfig.isBrowser || config.isBrowser) {
+        console.warn("xAI API may not work directly from browsers due to CORS policy. Consider using a proxy server.");
+      }
       
       const body = formatOpenAIRequest(requestConfig, config.model, true);
       

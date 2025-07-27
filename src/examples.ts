@@ -1,6 +1,7 @@
 import {
   sendMessage,
   streamMessage,
+  askQuestion,
   setDefaultFetch,
   getDefaultFetch,
   type FetchFunction,
@@ -163,7 +164,7 @@ async function exampleStreamingWithCustomFetch() {
   
   for await (const chunk of streamResponse.chunks) {
     if (chunk.type === "content") {
-      process.stdout.write(chunk.content || '');
+              console.log(chunk.content || '');
     }
   }
 }
@@ -250,6 +251,89 @@ async function demonstrateFetchPriority() {
   console.log('\n--- Test 3: Using global fetch ---');
   delete (config as any).fetch;
   await sendMessage(config);
+}
+
+// ===== BROWSER USAGE EXAMPLES =====
+
+/**
+ * Example: Browser usage with Anthropic (requires browser-specific header)
+ */
+export async function browserAnthropicExample() {
+  const response = await sendMessage(
+    {
+      service: "anthropic",
+      apiKey: "your-anthropic-api-key",
+      model: "claude-3-sonnet-20240229",
+      messages: [{ role: "user", content: "Hello from the browser!" }],
+      isBrowser: true, // Adds anthropic-dangerous-direct-browser-access header
+    }
+  );
+  
+  console.log("Browser response:", response.content);
+  return response;
+}
+
+/**
+ * Example: Browser usage with other providers (with CORS warnings)
+ */
+export async function browserWarningExample() {
+  // This will show a warning about CORS restrictions
+  const response = await sendMessage(
+    {
+      service: "openai",
+      apiKey: "your-openai-api-key", 
+      model: "gpt-4",
+      messages: [{ role: "user", content: "This may not work in browsers" }],
+      isBrowser: true, // Shows CORS warning
+    }
+  );
+  
+  return response;
+}
+
+/**
+ * Example: Ask a question directly from browser
+ */
+export async function browserQuestionExample() {
+  const response = await askQuestion(
+    {
+      service: "anthropic",
+      apiKey: "your-anthropic-api-key",
+      model: "claude-3-sonnet-20240229",
+    },
+    "What are the benefits of using TypeScript?",
+    {
+      isBrowser: true, // Enable browser-specific handling
+      systemPrompt: "Be concise and practical",
+    }
+  );
+  
+  console.log("Browser answer:", response.content);
+  return response;
+}
+
+/**
+ * Example: Streaming in browser (with proper headers)
+ */
+export async function browserStreamingExample() {
+  const stream = await streamMessage(
+    {
+      service: "anthropic",
+      apiKey: "your-anthropic-api-key",
+      model: "claude-3-sonnet-20240229",
+      messages: [{ role: "user", content: "Tell me a story" }],
+      isBrowser: true,
+    }
+  );
+  
+  // Process streaming chunks
+  for await (const chunk of stream.chunks) {
+    if (chunk.type === "content") {
+      console.log(chunk.content);
+    }
+  }
+  
+  return stream;
 }
 
 // Export all examples

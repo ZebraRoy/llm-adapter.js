@@ -33,6 +33,11 @@ export function createAnthropicAdapter(config: AnthropicConfig): LLMAdapter {
         headers["anthropic-beta"] = "thinking-2024-12-03";
       }
       
+      // Add browser-specific header for CORS support
+      if (requestConfig.isBrowser || config.isBrowser) {
+        headers["anthropic-dangerous-direct-browser-access"] = "true";
+      }
+      
       const body = formatAnthropicRequest(requestConfig, config.model, config.enableThinking);
       
       const response = await fetchFn(`${baseUrl}/messages`, {
@@ -59,6 +64,11 @@ export function createAnthropicAdapter(config: AnthropicConfig): LLMAdapter {
       
       if (config.enableThinking) {
         headers["anthropic-beta"] = "thinking-2024-12-03";
+      }
+      
+      // Add browser-specific header for CORS support
+      if (requestConfig.isBrowser || config.isBrowser) {
+        headers["anthropic-dangerous-direct-browser-access"] = "true";
       }
       
       const body = formatAnthropicRequest(requestConfig, config.model, config.enableThinking, true);

@@ -22,9 +22,15 @@ export function createOllamaAdapter(config: OllamaConfig): LLMAdapter {
   return {
     async call(requestConfig: LLMConfig): Promise<LLMResponse> {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
-      const headers = {
+      const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
+      
+      // Ollama is typically used locally and should work in browsers if the server allows CORS
+      if (requestConfig.isBrowser || config.isBrowser) {
+        // No special headers needed for Ollama, but user should ensure CORS is configured on their Ollama server
+        console.info("Using Ollama in browser mode. Ensure your Ollama server has CORS enabled if needed.");
+      }
       
       const body = formatOllamaRequest(requestConfig, config.model);
       
@@ -44,9 +50,14 @@ export function createOllamaAdapter(config: OllamaConfig): LLMAdapter {
     
     async stream(requestConfig: LLMConfig): Promise<StreamingResponse> {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
-      const headers = {
+      const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
+      
+      // Ollama is typically used locally and should work in browsers if the server allows CORS
+      if (requestConfig.isBrowser || config.isBrowser) {
+        console.info("Using Ollama in browser mode. Ensure your Ollama server has CORS enabled if needed.");
+      }
       
       const body = formatOllamaRequest(requestConfig, config.model, true);
       
