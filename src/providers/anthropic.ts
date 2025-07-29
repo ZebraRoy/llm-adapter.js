@@ -29,9 +29,6 @@ export function createAnthropicAdapter(config: AnthropicConfig): LLMAdapter {
         "anthropic-version": "2023-06-01",
       };
       
-      if (config.enableThinking) {
-        headers["anthropic-beta"] = "interleaved-thinking-2025-05-14";
-      }
       
       
       // Add browser-specific header for CORS support
@@ -39,7 +36,7 @@ export function createAnthropicAdapter(config: AnthropicConfig): LLMAdapter {
         headers["anthropic-dangerous-direct-browser-access"] = "true";
       }
       
-      const body = formatAnthropicRequest(requestConfig, config.model, config.enableThinking);
+      const body = formatAnthropicRequest(requestConfig, config.model, config.budgetTokens);
       
       const response = await fetchFn(`${baseUrl}/messages`, {
         method: "POST",
@@ -63,9 +60,6 @@ export function createAnthropicAdapter(config: AnthropicConfig): LLMAdapter {
         "anthropic-version": "2023-06-01",
       };
       
-      if (config.enableThinking) {
-        headers["anthropic-beta"] = "interleaved-thinking-2025-05-14";
-      }
       
       
       // Add browser-specific header for CORS support
@@ -73,7 +67,7 @@ export function createAnthropicAdapter(config: AnthropicConfig): LLMAdapter {
         headers["anthropic-dangerous-direct-browser-access"] = "true";
       }
       
-      const body = formatAnthropicRequest(requestConfig, config.model, config.enableThinking, true);
+      const body = formatAnthropicRequest(requestConfig, config.model, config.budgetTokens, true);
       
       const response = await fetchFn(`${baseUrl}/messages`, {
         method: "POST",
@@ -109,11 +103,11 @@ export function createAnthropicAdapter(config: AnthropicConfig): LLMAdapter {
  * Internal function to convert unified config to Anthropic format
  * @param config - Unified LLM configuration
  * @param defaultModel - Default model name
- * @param enableThinking - Whether to enable thinking mode
+ * @param budgetTokens - Budget tokens for thinking process (minimum 1024)
  * @param stream - Whether this is a streaming request
  * @returns Anthropic API request body
  */
-function formatAnthropicRequest(config: LLMConfig, defaultModel: string, enableThinking?: boolean, stream = false): any {
+function formatAnthropicRequest(config: LLMConfig, defaultModel: string, budgetTokens?: number, stream = false): any {
   // Validate tool result messages
   config.messages.forEach(msg => validateToolResultMessage(msg, 'anthropic'));
 
@@ -185,6 +179,12 @@ function formatAnthropicRequest(config: LLMConfig, defaultModel: string, enableT
       input_schema: tool.parameters,
     })) : undefined,
     stream,
+    ...(budgetTokens && {
+      thinking: {
+        type: "enabled",
+        budget_tokens: budgetTokens
+      }
+    })
   };
 }
 
@@ -207,7 +207,7 @@ function parseAnthropicResponse(data: any, requestConfig: LLMConfig): LLMRespons
     service: requestConfig.service,
     model: data.model,
     content: textContent ? textContent.text : "",
-    reasoning: hasThinking ? data.content.find((c: any) => c.type === "thinking").content : undefined,
+    reasoning: hasThinking ? data.content.find((c: any) => c.type === "thinking").thinking : undefined,
     toolCalls: hasToolCalls ? toolUseContent.map((tc: any) => ({
       id: tc.id,
       name: tc.name,
@@ -262,10 +262,10 @@ function createAnthropicStreamingResponse(
               content: data.delta.text,
             };
           } else if (data.delta.type === "thinking_delta") {
-            collectedReasoning += data.delta.text;
+            collectedReasoning += data.delta.thinking;
             yield {
               type: "reasoning",
-              reasoning: data.delta.text,
+              reasoning: data.delta.thinking,
             };
           }
         }

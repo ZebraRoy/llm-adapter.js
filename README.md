@@ -141,7 +141,7 @@ const anthropicConfig: AnthropicConfig = {
   service: "anthropic",
   apiKey: "your-anthropic-key",
   model: "claude-3-sonnet-20240229",
-  enableThinking: true, // Enable reasoning/thinking mode
+  budgetTokens: 8192, // Enable extended thinking with budget
   messages: [
     /* messages */
   ],
@@ -203,7 +203,7 @@ const xaiConfig: XAIConfig = {
 | Provider  | Tool Calling | Reasoning | Streaming | Notes                                             |
 | --------- | ------------ | --------- | --------- | ------------------------------------------------- |
 | OpenAI    | ✅           | ✅        | ✅        | o1/o3 series with reasoning; GPT-4 with tools    |
-| Anthropic | ✅           | ✅        | ✅        | Reasoning via `enableThinking: true`              |
+| Anthropic | ✅           | ✅        | ✅        | Extended thinking via `budgetTokens`              |
 | Google    | ✅           | ✅        | ✅        | Gemini 2.5 series with built-in thinking         |
 | Ollama    | ✅\*         | ✅\*      | ✅        | OpenAI compatible; \*depends on model capabilities |
 | Groq      | ✅           | ✅        | ✅        | DeepSeek-R1, Qwen QwQ/3 reasoning models         |
@@ -679,7 +679,7 @@ const config: AnthropicConfig = {
   service: "anthropic",
   apiKey: "your-api-key",
   model: "claude-3-sonnet-20240229",
-  enableThinking: true, // Enable reasoning mode
+  budgetTokens: 8192, // Enable extended thinking with budget
   messages: [
     { role: "user", content: "Solve this complex math problem: 2^8 + 3^4" },
   ],
@@ -817,7 +817,7 @@ if (hasReasoning(response)) {
 | Provider  | Reasoning Models | Control Parameters | Special Features |
 | --------- | ---------------- | ------------------ | ---------------- |
 | **OpenAI** | o1, o1-mini, o3-mini | `reasoningEffort` | Reasoning token counting |
-| **Anthropic** | All models | `enableThinking` | Explicit thinking toggle |
+| **Anthropic** | All models | `budgetTokens` | Extended thinking budget |
 | **Google** | Gemini 2.5 Pro/Flash | `thinkingBudget`, `includeThoughts` | Thought summaries |
 | **xAI** | Grok 3, Grok 4 | `reasoningEffort` | Built-in reasoning (Grok 4) |
 | **Groq** | Qwen QwQ/3, DeepSeek-R1 | `reasoningFormat`, `reasoningEffort` | Ultra-fast reasoning |

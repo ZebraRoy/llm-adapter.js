@@ -33,8 +33,8 @@ export interface AnthropicConfig extends Omit<LLMConfig, 'service'> {
   model: string;
   /** Custom API base URL */
   baseUrl?: string;
-  /** Enable thinking/reasoning mode for supported models */
-  enableThinking?: boolean;
+  /** Budget tokens for thinking process (minimum 1024). When set, enables extended thinking mode. */
+  budgetTokens?: number;
   /** Custom fetch implementation */
   fetch?: FetchFunction;
   /** Enable browser-specific API handling */

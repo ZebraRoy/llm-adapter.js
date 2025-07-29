@@ -79,7 +79,7 @@ describe('Streaming with Tool Calls and Reasoning', () => {
         apiKey: 'test-key',
         model: 'claude-3-7-sonnet-20250224',
         messages: testMessages,
-        enableThinking: true
+        budgetTokens: 8192
       };
 
       const response = await streamMessage(config, { fetch: mockFetch });
@@ -111,7 +111,7 @@ describe('Streaming with Tool Calls and Reasoning', () => {
         model: 'claude-3-7-sonnet-20250224',
         messages: testMessages,
         tools: testTools,
-        enableThinking: true
+        budgetTokens: 8192
       };
 
       const response = await streamMessage(config, { fetch: mockFetch });
@@ -204,7 +204,7 @@ describe('Streaming with Tool Calls and Reasoning', () => {
         model: 'claude-3-7-sonnet-20250224',
         messages: testMessages,
         tools: testTools,
-        enableThinking: true
+        budgetTokens: 8192
       };
 
       const streamResponse = await streamMessage(config, { fetch: mockFetch });

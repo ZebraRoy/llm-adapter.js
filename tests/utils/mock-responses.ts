@@ -79,6 +79,33 @@ export const mockAnthropicResponse = {
 };
 
 /**
+ * Mock Anthropic messages response with thinking (Claude 4/3.7 Sonnet)
+ */
+export const mockAnthropicResponseWithThinking = {
+  id: "msg_thinking_123",
+  type: "message",
+  role: "assistant",
+  model: "claude-sonnet-4-20250514",
+  content: [
+    {
+      type: "thinking",
+      thinking: "Let me think about this request carefully. The user is asking for help, so I should provide a useful and thoughtful response.",
+      signature: "abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567"
+    },
+    {
+      type: "text",
+      text: "After careful consideration, I'm ready to help you with whatever you need!"
+    }
+  ],
+  stop_reason: "end_turn",
+  stop_sequence: null,
+  usage: {
+    input_tokens: 15,
+    output_tokens: 45
+  }
+};
+
+/**
  * Mock Anthropic streaming response chunks - basic text
  */
 export const mockAnthropicStreamingChunks = [
@@ -97,9 +124,9 @@ export const mockAnthropicStreamingChunks = [
 export const mockAnthropicStreamingWithThinkingChunks = [
   'data: {"type":"message_start","message":{"id":"msg_thinking_123","type":"message","role":"assistant","model":"claude-3-7-sonnet-20250224","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":15,"output_tokens":0}}}\n\n',
   'data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}\n\n',
-  'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","text":"Let me think about this problem carefully."}}\n\n',
-  'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","text":" I need to consider multiple factors..."}}\n\n',
-  'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","text":" After analyzing the situation, I believe the best approach is..."}}\n\n',
+  'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me think about this problem carefully."}}\n\n',
+  'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" I need to consider multiple factors..."}}\n\n',
+  'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" After analyzing the situation, I believe the best approach is..."}}\n\n',
   'data: {"type":"content_block_stop","index":0}\n\n',
   'data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}\n\n',
   'data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"After careful consideration, "}}\n\n',
@@ -126,8 +153,8 @@ export const mockAnthropicStreamingWithToolsChunks = [
 export const mockAnthropicStreamingWithThinkingAndToolsChunks = [
   'data: {"type":"message_start","message":{"id":"msg_thinking_tools_123","type":"message","role":"assistant","model":"claude-3-7-sonnet-20250224","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":30,"output_tokens":0}}}\n\n',
   'data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}\n\n',
-  'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","text":"The user is asking about weather. I should use the get_weather function to get current information."}}\n\n',
-  'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","text":" I\'ll call it with San Francisco as the location."}}\n\n',
+  'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"The user is asking about weather. I should use the get_weather function to get current information."}}\n\n',
+  'data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":" I\'ll call it with San Francisco as the location."}}\n\n',
   'data: {"type":"content_block_stop","index":0}\n\n',
   'data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_456","name":"get_weather","input":{"location":"San Francisco"}}}\n\n',
   'data: {"type":"content_block_stop","index":1}\n\n',
