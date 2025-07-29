@@ -225,8 +225,13 @@ function createDeepSeekStreamingResponse(
   let collectedReasoning = "";
   let collectedToolCalls: ToolCall[] = [];
   let usage: Usage | undefined;
+  let finalResponse: LLMResponse | undefined;
+  let chunksCache: StreamChunk[] = [];
+  let isStreamComplete = false;
   
-  const chunks = async function* (): AsyncGenerator<StreamChunk> {
+  const processStream = async () => {
+    if (isStreamComplete) return;
+    
     for await (const chunk of parseSSEStream(reader)) {
       try {
         const data = JSON.parse(chunk);
@@ -238,18 +243,20 @@ function createDeepSeekStreamingResponse(
         
         if (delta.content) {
           collectedContent += delta.content;
-          yield {
-            type: "content",
+          const contentChunk = {
+            type: "content" as const,
             content: delta.content,
           };
+          chunksCache.push(contentChunk);
         }
 
         if (delta.reasoning) {
           collectedReasoning += delta.reasoning;
-          yield {
-            type: "reasoning",
+          const reasoningChunk = {
+            type: "reasoning" as const,
             reasoning: delta.reasoning,
           };
+          chunksCache.push(reasoningChunk);
         }
         
         if (delta.tool_calls) {
@@ -262,10 +269,11 @@ function createDeepSeekStreamingResponse(
                 input: JSON.parse(toolCall.function.arguments || "{}"),
               };
               collectedToolCalls.push(newToolCall);
-              yield {
-                type: "tool_call",
+              const toolCallChunk = {
+                type: "tool_call" as const,
                 toolCall: newToolCall,
               };
+              chunksCache.push(toolCallChunk);
             }
           }
         }
@@ -276,14 +284,15 @@ function createDeepSeekStreamingResponse(
             output_tokens: data.usage.completion_tokens,
             total_tokens: data.usage.total_tokens,
           };
-          yield {
-            type: "usage",
+          const usageChunk = {
+            type: "usage" as const,
             usage,
           };
+          chunksCache.push(usageChunk);
         }
         
         if (choice.finish_reason) {
-          const finalResponse: LLMResponse = {
+          finalResponse = {
             service: requestConfig.service,
             model: data.model,
             content: collectedContent,
@@ -304,14 +313,24 @@ function createDeepSeekStreamingResponse(
             ],
           };
           
-          yield {
-            type: "complete",
+          const completeChunk = {
+            type: "complete" as const,
             finalResponse,
           };
+          chunksCache.push(completeChunk);
+          isStreamComplete = true;
+          break;
         }
       } catch (error) {
         console.error("Error parsing DeepSeek stream chunk:", error);
       }
+    }
+  };
+  
+  const chunks = async function* (): AsyncGenerator<StreamChunk> {
+    await processStream();
+    for (const chunk of chunksCache) {
+      yield chunk;
     }
   };
   
@@ -320,14 +339,7 @@ function createDeepSeekStreamingResponse(
     model: requestConfig.model,
     chunks: chunks(),
     async collect(): Promise<LLMResponse> {
-      let finalResponse: LLMResponse | undefined;
-      
-      for await (const chunk of chunks()) {
-        if (chunk.type === "complete" && chunk.finalResponse) {
-          finalResponse = chunk.finalResponse;
-          break;
-        }
-      }
+      await processStream();
       
       if (!finalResponse) {
         throw new Error("Stream ended without final response");

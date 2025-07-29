@@ -5,7 +5,9 @@
       "Bash(npm run test:*)",
       "Bash(mv:*)",
       "Bash(rm:*)",
-      "Bash(del \"C:\\WorkSpace\\llm-adapter.js\\src\\utils\\tool-helpers.ts\")"
+      "Bash(del \"C:\\WorkSpace\\llm-adapter.js\\src\\utils\\tool-helpers.ts\")",
+      "Bash(npm run lint)",
+      "Bash(npm run:*)"
     ],
     "deny": []
   }

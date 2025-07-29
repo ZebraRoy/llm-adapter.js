@@ -30,4 +30,8 @@ export interface LLMConfig {
   fetch?: FetchFunction;
   /** Enable browser-specific API handling (adds required headers for browser requests) */
   isBrowser?: boolean;
+  /** Reasoning effort level for supported models */
+  reasoningEffort?: "low" | "medium" | "high" | "default" | "none";
+  /** Reasoning output format for supported models */
+  reasoningFormat?: "raw" | "parsed";
 } 

@@ -121,14 +121,29 @@ describe('Browser Support', () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({
-        message: { content: 'Local response!' },
-        model: 'llama2'
+        id: "chatcmpl-ollama-123",
+        object: "chat.completion",
+        created: 1677652288,
+        model: "llama3.2",
+        choices: [{
+          index: 0,
+          message: {
+            role: "assistant",
+            content: "Local response!"
+          },
+          finish_reason: "stop"
+        }],
+        usage: {
+          prompt_tokens: 10,
+          completion_tokens: 9,
+          total_tokens: 19
+        }
       })
     });
 
     await sendMessage({
       service: 'ollama',
-      model: 'llama2',
+      model: 'llama3.2',
       messages: [{ role: 'user', content: 'Hello' }],
       isBrowser: true,
       fetch: mockFetch

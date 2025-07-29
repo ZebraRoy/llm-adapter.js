@@ -46,15 +46,15 @@ export const mockOpenAIStreamingWithToolsChunks = [
 ];
 
 /**
- * Mock OpenAI streaming response chunks with reasoning (simulated o1-style)
+ * Mock OpenAI streaming response chunks with reasoning (o1/o3 style)
  */
 export const mockOpenAIStreamingWithReasoningChunks = [
-  'data: {"id":"chatcmpl-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"o1-preview","choices":[{"index":0,"delta":{"role":"assistant","content":"","reasoning":"I need to think about this step by step."},"finish_reason":null}]}\n\n',
-  'data: {"id":"chatcmpl-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"o1-preview","choices":[{"index":0,"delta":{"reasoning":" First, let me consider the problem..."},"finish_reason":null}]}\n\n',
-  'data: {"id":"chatcmpl-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"o1-preview","choices":[{"index":0,"delta":{"reasoning":" Now I can provide my answer."},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"o1-preview","choices":[{"index":0,"delta":{"role":"assistant","content":"","reasoning_content":"I need to think about this step by step."},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"o1-preview","choices":[{"index":0,"delta":{"reasoning_content":" First, let me consider the problem..."},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"o1-preview","choices":[{"index":0,"delta":{"reasoning_content":" Now I can provide my answer."},"finish_reason":null}]}\n\n',
   'data: {"id":"chatcmpl-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"o1-preview","choices":[{"index":0,"delta":{"content":"Based on my analysis, "},"finish_reason":null}]}\n\n',
   'data: {"id":"chatcmpl-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"o1-preview","choices":[{"index":0,"delta":{"content":"the answer is 42."},"finish_reason":null}]}\n\n',
-  'data: {"id":"chatcmpl-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"o1-preview","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":35,"total_tokens":55}}\n\n',
+  'data: {"id":"chatcmpl-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"o1-preview","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":35,"total_tokens":55,"reasoning_tokens":15}}\n\n',
   'data: [DONE]\n\n'
 ];
 
@@ -158,6 +158,46 @@ export const mockGoogleResponse = {
 };
 
 /**
+ * Mock Google Gemini 2.5 response with thinking
+ */
+export const mockGoogleThinkingResponse = {
+  candidates: [{
+    content: {
+      parts: [
+        {
+          thinking: "I need to consider this request carefully. The user wants help, so I should provide a thoughtful and useful response."
+        },
+        {
+          text: "After thinking about your request, here's how I can help you."
+        }
+      ],
+      role: "model"
+    },
+    finishReason: "STOP",
+    index: 0,
+    safetyRatings: []
+  }],
+  thoughtSummaries: [{
+    content: "User needs assistance. I should provide helpful information based on their specific request."
+  }],
+  usageMetadata: {
+    promptTokenCount: 15,
+    candidatesTokenCount: 35,
+    totalTokenCount: 50
+  }
+};
+
+/**
+ * Mock Google streaming response chunks with thinking
+ */
+export const mockGoogleStreamingWithThinkingChunks = [
+  'data: {"candidates":[{"content":{"parts":[{"thinking":"Let me think about this request step by step."}],"role":"model"},"index":0}]}\n\n',
+  'data: {"candidates":[{"content":{"parts":[{"thinking":" I need to provide a helpful response."}],"role":"model"},"index":0}]}\n\n',
+  'data: {"candidates":[{"content":{"parts":[{"text":"After considering your question, "}],"role":"model"},"index":0}]}\n\n',
+  'data: {"candidates":[{"content":{"parts":[{"text":"here\'s my response."}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":20,"candidatesTokenCount":25,"totalTokenCount":45}}\n\n'
+];
+
+/**
  * Mock Google streaming response chunks with tool calls
  */
 export const mockGoogleStreamingWithToolsChunks = [
@@ -186,6 +226,43 @@ export const mockGroqResponse = {
     total_tokens: 19
   }
 };
+
+/**
+ * Mock Groq response with reasoning (Qwen QwQ model)
+ */
+export const mockGroqReasoningResponse = {
+  id: "chatcmpl-groq-reasoning-123",
+  object: "chat.completion",
+  created: 1677652288,
+  model: "qwen-qwq-32b",
+  choices: [{
+    index: 0,
+    message: {
+      role: "assistant",
+      content: "Based on my thinking, here's the answer.",
+      reasoning: "Let me think step by step. The user is asking for help, so I need to analyze what they need and provide a thoughtful response."
+    },
+    finish_reason: "stop"
+  }],
+  usage: {
+    prompt_tokens: 15,
+    completion_tokens: 25,
+    total_tokens: 40
+  }
+};
+
+/**
+ * Mock Groq streaming response chunks with reasoning
+ */
+export const mockGroqStreamingWithReasoningChunks = [
+  'data: {"id":"chatcmpl-groq-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"qwen-qwq-32b","choices":[{"index":0,"delta":{"role":"assistant","content":"","reasoning":"I need to think about this carefully."},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-groq-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"qwen-qwq-32b","choices":[{"index":0,"delta":{"reasoning":" Let me analyze the situation..."},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-groq-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"qwen-qwq-32b","choices":[{"index":0,"delta":{"reasoning":" Now I understand what to do."},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-groq-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"qwen-qwq-32b","choices":[{"index":0,"delta":{"content":"After thinking it through, "},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-groq-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"qwen-qwq-32b","choices":[{"index":0,"delta":{"content":"here\'s my response."},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-groq-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"qwen-qwq-32b","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":30,"total_tokens":50}}\n\n',
+  'data: [DONE]\n\n'
+];
 
 /**
  * Mock DeepSeek response (OpenAI-compatible)
@@ -258,22 +335,64 @@ export const mockXAIResponse = {
 };
 
 /**
- * Mock Ollama response
+ * Mock xAI response with reasoning (Grok 3)
+ */
+export const mockXAIReasoningResponse = {
+  id: "chatcmpl-xai-reasoning-123",
+  object: "chat.completion",
+  created: 1677652288,
+  model: "grok-3",
+  choices: [{
+    index: 0,
+    message: {
+      role: "assistant",
+      content: "After reasoning through this, here's my answer.",
+      reasoning_content: "Let me think about this systematically. The user needs help, so I should provide a clear and helpful response based on my analysis."
+    },
+    finish_reason: "stop"
+  }],
+  usage: {
+    prompt_tokens: 18,
+    completion_tokens: 28,
+    total_tokens: 46,
+    reasoning_tokens: 22
+  }
+};
+
+/**
+ * Mock xAI streaming response chunks with reasoning
+ */
+export const mockXAIStreamingWithReasoningChunks = [
+  'data: {"id":"chatcmpl-xai-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"grok-3","choices":[{"index":0,"delta":{"role":"assistant","content":"","reasoning_content":"I should think about this problem step by step."},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-xai-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"grok-3","choices":[{"index":0,"delta":{"reasoning_content":" Let me consider the user\'s request..."},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-xai-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"grok-3","choices":[{"index":0,"delta":{"reasoning_content":" Now I can provide a helpful response."},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-xai-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"grok-3","choices":[{"index":0,"delta":{"content":"Based on my reasoning, "},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-xai-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"grok-3","choices":[{"index":0,"delta":{"content":"here\'s what I think."},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-xai-reasoning-123","object":"chat.completion.chunk","created":1677652288,"model":"grok-3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":22,"completion_tokens":32,"total_tokens":54,"reasoning_tokens":18}}\n\n',
+  'data: [DONE]\n\n'
+];
+
+/**
+ * Mock Ollama response (OpenAI compatible)
  */
 export const mockOllamaResponse = {
-  model: "llama2",
-  created_at: "2023-12-12T14:13:43.416799Z",
-  message: {
-    role: "assistant",
-    content: "Hello! How can I help you today?"
-  },
-  done: true,
-  total_duration: 5191566416,
-  load_duration: 2154458,
-  prompt_eval_count: 26,
-  prompt_eval_duration: 383809000,
-  eval_count: 298,
-  eval_duration: 4799921000
+  id: "chatcmpl-ollama-123",
+  object: "chat.completion",
+  created: 1677652288,
+  model: "llama3.2",
+  choices: [{
+    index: 0,
+    message: {
+      role: "assistant",
+      content: "Hello! How can I help you today?"
+    },
+    finish_reason: "stop"
+  }],
+  usage: {
+    prompt_tokens: 10,
+    completion_tokens: 9,
+    total_tokens: 19
+  }
 };
 
 /**
@@ -569,7 +688,14 @@ export const mockStreamingChunks = {
     withReasoning: mockDeepSeekStreamingWithReasoningChunks,
     withReasoningAndTools: mockDeepSeekStreamingWithReasoningAndToolsChunks,
   },
+  groq: {
+    withReasoning: mockGroqStreamingWithReasoningChunks,
+  },
+  xai: {
+    withReasoning: mockXAIStreamingWithReasoningChunks,
+  },
   google: {
     withTools: mockGoogleStreamingWithToolsChunks,
+    withThinking: mockGoogleStreamingWithThinkingChunks,
   }
 }; 

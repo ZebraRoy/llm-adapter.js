@@ -8,11 +8,12 @@ import type {
   Usage 
 } from '../types/index.js';
 import type { LLMAdapter } from '../core/adapter.js';
-import { validateLLMConfig } from '../utils/validation.js';
+import { validateLLMConfig, sanitizeTools, validateToolResultMessage, validateOpenAIConversationFlow } from '../utils/validation.js';
+import { parseSSEStream } from '../utils/streaming.js';
 
 /**
- * Ollama adapter - handles local deployment, Ollama-specific format
- * Internal function that creates an Ollama-compatible adapter
+ * Ollama adapter - handles local deployment, OpenAI-compatible format
+ * Internal function that creates an Ollama adapter using OpenAI API format
  * @param config - Ollama configuration
  * @returns LLM adapter for Ollama
  */
@@ -34,7 +35,7 @@ export function createOllamaAdapter(config: OllamaConfig): LLMAdapter {
       
       const body = formatOllamaRequest(requestConfig, config.model);
       
-      const response = await fetchFn(`${baseUrl}/api/chat`, {
+      const response = await fetchFn(`${baseUrl}/v1/chat/completions`, {
         method: "POST",
         headers,
         body: JSON.stringify(body),
@@ -61,7 +62,7 @@ export function createOllamaAdapter(config: OllamaConfig): LLMAdapter {
       
       const body = formatOllamaRequest(requestConfig, config.model, true);
       
-      const response = await fetchFn(`${baseUrl}/api/chat`, {
+      const response = await fetchFn(`${baseUrl}/v1/chat/completions`, {
         method: "POST",
         headers,
         body: JSON.stringify(body),
@@ -91,79 +92,122 @@ export function createOllamaAdapter(config: OllamaConfig): LLMAdapter {
 }
 
 /**
- * Format request for Ollama API
- * Internal function to convert unified config to Ollama format
+ * Format request for Ollama API (OpenAI compatible)
+ * Internal function to convert unified config to OpenAI format
  * @param config - Unified LLM configuration
  * @param defaultModel - Default model name
  * @param stream - Whether this is a streaming request
- * @returns Ollama API request body
+ * @returns OpenAI compatible API request body
  */
 function formatOllamaRequest(config: LLMConfig, defaultModel: string, stream = false): any {
-  const messages = config.messages.map(msg => ({
-    role: msg.role === "assistant" ? "assistant" : "user",
-    content: msg.content,
-  }));
+  // Validate tool result messages
+  config.messages.forEach(msg => validateToolResultMessage(msg, 'openai'));
+  
+  // Validate conversation flow for OpenAI API
+  validateOpenAIConversationFlow(config.messages, "Ollama");
 
-  const body: any = {
+  return {
     model: config.model || defaultModel,
-    messages,
+    messages: config.messages.map(msg => {
+      // Handle tool result messages (role: "tool_result" -> "tool")
+      if (msg.role === "tool_result") {
+        if (!msg.tool_call_id) {
+          throw new Error("Tool result message must have tool_call_id for Ollama OpenAI API");
+        }
+        return {
+          role: "tool",
+          content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+          tool_call_id: msg.tool_call_id,
+        };
+      }
+      
+      // Handle assistant messages with tool calls
+      if (msg.role === "assistant" && msg.tool_calls) {
+        return {
+          role: "assistant",
+          content: msg.content || null,
+          tool_calls: msg.tool_calls.map(tc => ({
+            id: tc.id,
+            type: "function",
+            function: {
+              name: tc.name,
+              arguments: typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input),
+            },
+          })),
+        };
+      }
+      
+      // Handle regular messages
+      return {
+        role: msg.role,
+        content: typeof msg.content === "string" ? msg.content : 
+                 (Array.isArray(msg.content) ? msg.content.map(c => ({ type: c.type, text: c.content })) : msg.content),
+      };
+    }),
+    temperature: config.temperature,
+    max_tokens: config.maxTokens,
+    tools: config.tools ? sanitizeTools(config.tools).map(tool => ({
+      type: "function",
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      },
+    })) : undefined,
     stream,
   };
-
-  // Add generation options if provided
-  if (config.temperature !== undefined || config.maxTokens !== undefined) {
-    body.options = {};
-    if (config.temperature !== undefined) {
-      body.options.temperature = config.temperature;
-    }
-    if (config.maxTokens !== undefined) {
-      body.options.num_predict = config.maxTokens;
-    }
-  }
-
-  return body;
 }
 
 /**
- * Parse Ollama API response
- * Internal function to convert Ollama response to unified format
+ * Parse Ollama API response (OpenAI compatible)
+ * Internal function to convert OpenAI-compatible response to unified format
  * @param data - Raw Ollama API response
  * @param requestConfig - Original request configuration
  * @returns Unified LLM response
  */
 function parseOllamaResponse(data: any, requestConfig: LLMConfig): LLMResponse {
-  const content = data.message?.content || "";
-  const hasText = !!content.trim();
+  const choice = data.choices[0];
+  const message = choice.message;
+  
+  const hasToolCalls = !!(message.tool_calls && message.tool_calls.length > 0);
+  const hasText = !!(message.content && message.content.trim());
+
+  const toolCalls = hasToolCalls ? message.tool_calls.map((tc: any) => ({
+    id: tc.id,
+    name: tc.function.name,
+    input: JSON.parse(tc.function.arguments),
+  })) : undefined;
   
   return {
     service: requestConfig.service,
-    model: data.model || requestConfig.model || "unknown",
-    content,
+    model: data.model,
+    content: message.content || "",
     reasoning: undefined, // Ollama doesn't support reasoning
-    toolCalls: undefined, // Basic Ollama doesn't support tool calls
+    toolCalls: toolCalls,
     capabilities: {
       hasText,
       hasReasoning: false, // Ollama doesn't support reasoning
-      hasToolCalls: false, // Basic Ollama doesn't support tool calls
+      hasToolCalls,
     },
     usage: {
-      input_tokens: data.prompt_eval_count || 0,
-      output_tokens: data.eval_count || 0,
-      total_tokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
+      input_tokens: data.usage?.prompt_tokens || 0,
+      output_tokens: data.usage?.completion_tokens || 0,
+      total_tokens: data.usage?.total_tokens || 0,
     },
     messages: [
       ...requestConfig.messages,
       {
         role: "assistant",
-        content,
+        content: message.content || "",
+        tool_calls: toolCalls,
       },
     ],
   };
 }
 
 /**
- * Create streaming response handler for Ollama
- * Internal function to handle Ollama streaming responses
+ * Create streaming response handler for Ollama (OpenAI compatible)
+ * Internal function to handle OpenAI-compatible streaming responses
  * @param requestConfig - Original request configuration
  * @param reader - Response stream reader
  * @returns Streaming response wrapper
@@ -173,83 +217,88 @@ function createOllamaStreamingResponse(
   reader: ReadableStreamDefaultReader<Uint8Array>
 ): StreamingResponse {
   let collectedContent = "";
+  let collectedToolCalls: ToolCall[] = [];
   let usage: Usage | undefined;
   
   const chunks = async function* (): AsyncGenerator<StreamChunk> {
-    const decoder = new TextDecoder();
-    let buffer = "";
-    
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    for await (const chunk of parseSSEStream(reader)) {
+      try {
+        const data = JSON.parse(chunk);
+        const choice = data.choices?.[0];
         
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || "";
+        if (!choice) continue;
         
-        for (const line of lines) {
-          if (line.trim()) {
-            try {
-              const data = JSON.parse(line);
-              
-              if (data.message?.content) {
-                const content = data.message.content;
-                collectedContent += content;
-                yield {
-                  type: "content",
-                  content,
-                };
-              }
-              
-              if (data.done) {
-                usage = {
-                  input_tokens: data.prompt_eval_count || 0,
-                  output_tokens: data.eval_count || 0,
-                  total_tokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
-                };
-                
-                yield {
-                  type: "usage",
-                  usage,
-                };
-                
-                const finalResponse: LLMResponse = {
-                  service: requestConfig.service,
-                  model: data.model || requestConfig.model || "unknown",
-                  content: collectedContent,
-                  reasoning: undefined, // Ollama doesn't support reasoning
-                  toolCalls: undefined, // Ollama doesn't support tool calls
-                  capabilities: {
-                    hasText: !!collectedContent.trim(),
-                    hasReasoning: false,
-                    hasToolCalls: false,
-                  },
-                  usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
-                  messages: [
-                    ...requestConfig.messages,
-                    {
-                      role: "assistant",
-                      content: collectedContent,
-                    },
-                  ],
-                };
-                
-                yield {
-                  type: "complete",
-                  finalResponse,
-                };
-                
-                return;
-              }
-            } catch (error) {
-              console.error("Error parsing Ollama stream chunk:", error);
+        const delta = choice.delta;
+        
+        if (delta.content) {
+          collectedContent += delta.content;
+          yield {
+            type: "content",
+            content: delta.content,
+          };
+        }
+        
+        if (delta.tool_calls) {
+          // Handle tool call streaming
+          for (const toolCall of delta.tool_calls) {
+            if (toolCall.function?.name) {
+              const newToolCall: ToolCall = {
+                id: toolCall.id,
+                name: toolCall.function.name,
+                input: JSON.parse(toolCall.function.arguments || "{}"),
+              };
+              collectedToolCalls.push(newToolCall);
+              yield {
+                type: "tool_call",
+                toolCall: newToolCall,
+              };
             }
           }
         }
+        
+        if (data.usage) {
+          usage = {
+            input_tokens: data.usage.prompt_tokens,
+            output_tokens: data.usage.completion_tokens,
+            total_tokens: data.usage.total_tokens,
+          };
+          yield {
+            type: "usage",
+            usage,
+          };
+        }
+        
+        if (choice.finish_reason) {
+          const finalResponse: LLMResponse = {
+            service: requestConfig.service,
+            model: data.model,
+            content: collectedContent,
+            reasoning: undefined, // Ollama doesn't support reasoning
+            toolCalls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
+            capabilities: {
+              hasText: !!collectedContent.trim(),
+              hasReasoning: false,
+              hasToolCalls: collectedToolCalls.length > 0,
+            },
+            usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+            messages: [
+              ...requestConfig.messages,
+              {
+                role: "assistant",
+                content: collectedContent,
+                tool_calls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
+              },
+            ],
+          };
+          
+          yield {
+            type: "complete",
+            finalResponse,
+          };
+        }
+      } catch (error) {
+        console.error("Error parsing Ollama stream chunk:", error);
       }
-    } finally {
-      reader.releaseLock();
     }
   };
   

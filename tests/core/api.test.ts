@@ -6,8 +6,11 @@ import {
   mockAnthropicResponse,
   mockGoogleResponse,
   mockGroqResponse,
+  mockGroqReasoningResponse,
   mockDeepSeekResponse,
   mockXAIResponse,
+  mockXAIReasoningResponse,
+  mockGoogleThinkingResponse,
   mockOllamaResponse,
   mockOpenAIWithToolsResponse,
   mockAnthropicWithToolsResponse,
@@ -60,7 +63,7 @@ const providerConfigs = {
   },
   ollama: {
     service: "ollama" as const,
-    model: "llama2",
+    model: "llama3.2",
     messages: testMessages,
     baseUrl: "http://localhost:11434"
   }
@@ -83,9 +86,9 @@ const mockStreamingChunks = {
   groq: mockOpenAIStreamingChunks,
   deepseek: mockOpenAIStreamingChunks,
   xai: mockOpenAIStreamingChunks,
-  // Google and Ollama have different streaming formats, we'll handle them separately
+  // Google has different streaming format, Ollama now uses OpenAI format
   google: ['data: {"candidates":[{"content":{"parts":[{"text":"Hello!"}],"role":"model"},"finishReason":"STOP"}]}\n\n'],
-  ollama: ['{"message":{"role":"assistant","content":"Hello"},"done":false}\n{"message":{"role":"assistant","content":"!"},"done":true,"total_duration":5191566416}\n']
+  ollama: mockOpenAIStreamingChunks
 };
 
 // ===== MAIN TESTS =====
@@ -381,10 +384,11 @@ describe('Core API Functions', () => {
           Object.keys(firstResponse.capabilities).sort()
         );
         
-        // Same usage structure
-        expect(Object.keys(response.usage).sort()).toEqual(
-          Object.keys(firstResponse.usage).sort()
-        );
+        // Same core usage structure (reasoning_tokens is optional)
+        const coreUsageKeys = ['input_tokens', 'output_tokens', 'total_tokens'];
+        const responseCoreKeys = coreUsageKeys.filter(key => key in response.usage);
+        const firstResponseCoreKeys = coreUsageKeys.filter(key => key in firstResponse.usage);
+        expect(responseCoreKeys.sort()).toEqual(firstResponseCoreKeys.sort());
       }
     });
 

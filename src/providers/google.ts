@@ -196,6 +196,17 @@ function formatGoogleRequest(config: LLMConfig, defaultModel: string): any {
     }];
   }
 
+  // Add thinking parameters for Gemini 2.5 series
+  const isThinkingModel = /gemini-2\.5/.test(defaultModel);
+  if (isThinkingModel) {
+    if ('thinkingBudget' in config && config.thinkingBudget) {
+      body.generationConfig.thinkingBudget = config.thinkingBudget;
+    }
+    if ('includeThoughts' in config && config.includeThoughts) {
+      body.generationConfig.includeThoughts = config.includeThoughts;
+    }
+  }
+
   return body;
 }
 
@@ -214,6 +225,7 @@ function parseGoogleResponse(data: any, requestConfig: LLMConfig): LLMResponse {
   
   const content = candidate.content;
   let responseText = "";
+  let thinkingContent = "";
   let toolCalls: ToolCall[] = [];
   
   if (content?.parts) {
@@ -228,21 +240,30 @@ function parseGoogleResponse(data: any, requestConfig: LLMConfig): LLMResponse {
           input: part.functionCall.args || {},
         });
       }
+      if (part.thinking) {
+        thinkingContent += part.thinking;
+      }
     }
+  }
+  
+  // Check for thought summaries in Gemini 2.5 response
+  if (data.thoughtSummaries && data.thoughtSummaries.length > 0) {
+    thinkingContent = data.thoughtSummaries.map((summary: any) => summary.content).join('\n');
   }
   
   const hasToolCalls = toolCalls.length > 0;
   const hasText = !!responseText.trim();
+  const hasReasoning = !!thinkingContent.trim();
   
   return {
     service: requestConfig.service,
     model: requestConfig.model || "gemini-pro",
     content: responseText,
-    reasoning: undefined, // Google doesn't expose reasoning in standard API
+    reasoning: thinkingContent || undefined,
     toolCalls: hasToolCalls ? toolCalls : undefined,
     capabilities: {
       hasText,
-      hasReasoning: false, // Google doesn't expose reasoning in standard API
+      hasReasoning,
       hasToolCalls,
     },
     usage: {
@@ -255,6 +276,7 @@ function parseGoogleResponse(data: any, requestConfig: LLMConfig): LLMResponse {
       {
         role: "assistant",
         content: responseText,
+        reasoning: thinkingContent || undefined,
       },
     ],
   };
@@ -272,10 +294,16 @@ function createGoogleStreamingResponse(
   reader: ReadableStreamDefaultReader<Uint8Array>
 ): StreamingResponse {
   let collectedContent = "";
+  let collectedThinking = "";
   let collectedToolCalls: ToolCall[] = [];
   let usage: Usage | undefined;
+  let finalResponse: LLMResponse | undefined;
+  let chunksCache: StreamChunk[] = [];
+  let isStreamComplete = false;
   
-  const chunks = async function* (): AsyncGenerator<StreamChunk> {
+  const processStream = async () => {
+    if (isStreamComplete) return;
+    
     for await (const chunk of parseSSEStream(reader)) {
       try {
         const data = JSON.parse(chunk);
@@ -286,10 +314,11 @@ function createGoogleStreamingResponse(
         for (const part of candidate.content.parts) {
           if (part.text) {
             collectedContent += part.text;
-            yield {
-              type: "content",
+            const contentChunk = {
+              type: "content" as const,
               content: part.text,
             };
+            chunksCache.push(contentChunk);
           }
           
           if (part.functionCall) {
@@ -299,11 +328,32 @@ function createGoogleStreamingResponse(
               input: part.functionCall.args || {},
             };
             collectedToolCalls.push(newToolCall);
-            yield {
-              type: "tool_call",
+            const toolCallChunk = {
+              type: "tool_call" as const,
               toolCall: newToolCall,
             };
+            chunksCache.push(toolCallChunk);
           }
+          
+          if (part.thinking) {
+            collectedThinking += part.thinking;
+            const reasoningChunk = {
+              type: "reasoning" as const,
+              reasoning: part.thinking,
+            };
+            chunksCache.push(reasoningChunk);
+          }
+        }
+        
+        // Handle thought summaries for Gemini 2.5
+        if (data.thoughtSummaries && data.thoughtSummaries.length > 0) {
+          const thinkingSummary = data.thoughtSummaries.map((summary: any) => summary.content).join('\n');
+          collectedThinking += thinkingSummary;
+          const reasoningChunk = {
+            type: "reasoning" as const,
+            reasoning: thinkingSummary,
+          };
+          chunksCache.push(reasoningChunk);
         }
         
         if (data.usageMetadata) {
@@ -312,22 +362,24 @@ function createGoogleStreamingResponse(
             output_tokens: data.usageMetadata.candidatesTokenCount || 0,
             total_tokens: data.usageMetadata.totalTokenCount || 0,
           };
-          yield {
-            type: "usage",
+          const usageChunk = {
+            type: "usage" as const,
             usage,
           };
+          chunksCache.push(usageChunk);
         }
         
         if (candidate.finishReason) {
-          const finalResponse: LLMResponse = {
+          const hasReasoning = !!collectedThinking.trim();
+          finalResponse = {
             service: requestConfig.service,
             model: requestConfig.model || "gemini-pro",
             content: collectedContent,
-            reasoning: undefined, // Google doesn't expose reasoning in standard API
+            reasoning: collectedThinking || undefined,
             toolCalls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
             capabilities: {
               hasText: !!collectedContent.trim(),
-              hasReasoning: false,
+              hasReasoning,
               hasToolCalls: collectedToolCalls.length > 0,
             },
             usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
@@ -336,18 +388,29 @@ function createGoogleStreamingResponse(
               {
                 role: "assistant",
                 content: collectedContent,
+                reasoning: collectedThinking || undefined,
               },
             ],
           };
           
-          yield {
-            type: "complete",
+          const completeChunk = {
+            type: "complete" as const,
             finalResponse,
           };
+          chunksCache.push(completeChunk);
+          isStreamComplete = true;
+          break;
         }
       } catch (error) {
         console.error("Error parsing Google stream chunk:", error);
       }
+    }
+  };
+  
+  const chunks = async function* (): AsyncGenerator<StreamChunk> {
+    await processStream();
+    for (const chunk of chunksCache) {
+      yield chunk;
     }
   };
   
@@ -356,14 +419,7 @@ function createGoogleStreamingResponse(
     model: requestConfig.model || "gemini-pro",
     chunks: chunks(),
     async collect(): Promise<LLMResponse> {
-      let finalResponse: LLMResponse | undefined;
-      
-      for await (const chunk of chunks()) {
-        if (chunk.type === "complete" && chunk.finalResponse) {
-          finalResponse = chunk.finalResponse;
-          break;
-        }
-      }
+      await processStream();
       
       if (!finalResponse) {
         throw new Error("Stream ended without final response");

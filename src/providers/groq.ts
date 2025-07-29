@@ -107,7 +107,7 @@ function formatOpenAIRequest(config: LLMConfig, defaultModel: string, stream = f
   // Validate conversation flow for Groq API
   validateOpenAIConversationFlow(config.messages, "Groq");
 
-  return {
+  const body: any = {
     model: config.model || defaultModel,
     messages: config.messages.map(msg => {
       // Handle tool result messages (role: "tool_result" -> "tool")
@@ -158,6 +158,23 @@ function formatOpenAIRequest(config: LLMConfig, defaultModel: string, stream = f
     })) : undefined,
     stream,
   };
+
+  // Add reasoning parameters for reasoning models
+  const isReasoningModel = /qwen|deepseek/.test(config.model || defaultModel);
+  if (isReasoningModel) {
+    if ('reasoningFormat' in config && config.reasoningFormat) {
+      body.reasoning_format = config.reasoningFormat;
+    }
+    if ('reasoningEffort' in config && config.reasoningEffort) {
+      body.reasoning_effort = config.reasoningEffort;
+    }
+    // Set required temperature for thinking mode
+    if (config.reasoningEffort === "default") {
+      body.temperature = config.temperature ?? 0.6;
+    }
+  }
+
+  return body;
 }
 
 /**
@@ -173,12 +190,13 @@ function parseOpenAIResponse(data: any, requestConfig: LLMConfig): LLMResponse {
   
   const hasToolCalls = !!(message.tool_calls && message.tool_calls.length > 0);
   const hasText = !!(message.content && message.content.trim());
+  const hasReasoning = !!(message.reasoning && message.reasoning.trim());
   
   return {
     service: requestConfig.service,
     model: data.model,
     content: message.content || "",
-    reasoning: undefined, // Groq doesn't support reasoning
+    reasoning: message.reasoning || undefined,
     toolCalls: hasToolCalls ? message.tool_calls.map((tc: any) => ({
       id: tc.id,
       name: tc.function.name,
@@ -186,7 +204,7 @@ function parseOpenAIResponse(data: any, requestConfig: LLMConfig): LLMResponse {
     })) : undefined,
     capabilities: {
       hasText,
-      hasReasoning: false, // Groq doesn't support reasoning
+      hasReasoning,
       hasToolCalls,
     },
     usage: {
@@ -199,6 +217,7 @@ function parseOpenAIResponse(data: any, requestConfig: LLMConfig): LLMResponse {
       {
         role: "assistant",
         content: message.content || "",
+        reasoning: message.reasoning || undefined,
       },
     ],
   };
@@ -216,10 +235,16 @@ function createOpenAIStreamingResponse(
   reader: ReadableStreamDefaultReader<Uint8Array>
 ): StreamingResponse {
   let collectedContent = "";
+  let collectedReasoning = "";
   let collectedToolCalls: ToolCall[] = [];
   let usage: Usage | undefined;
+  let finalResponse: LLMResponse | undefined;
+  let chunksCache: StreamChunk[] = [];
+  let isStreamComplete = false;
   
-  const chunks = async function* (): AsyncGenerator<StreamChunk> {
+  const processStream = async () => {
+    if (isStreamComplete) return;
+    
     for await (const chunk of parseSSEStream(reader)) {
       try {
         const data = JSON.parse(chunk);
@@ -231,10 +256,20 @@ function createOpenAIStreamingResponse(
         
         if (delta.content) {
           collectedContent += delta.content;
-          yield {
-            type: "content",
+          const contentChunk = {
+            type: "content" as const,
             content: delta.content,
           };
+          chunksCache.push(contentChunk);
+        }
+        
+        if (delta.reasoning) {
+          collectedReasoning += delta.reasoning;
+          const reasoningChunk = {
+            type: "reasoning" as const,
+            reasoning: delta.reasoning,
+          };
+          chunksCache.push(reasoningChunk);
         }
         
         if (delta.tool_calls) {
@@ -247,10 +282,11 @@ function createOpenAIStreamingResponse(
                 input: JSON.parse(toolCall.function.arguments || "{}"),
               };
               collectedToolCalls.push(newToolCall);
-              yield {
-                type: "tool_call",
+              const toolCallChunk = {
+                type: "tool_call" as const,
                 toolCall: newToolCall,
               };
+              chunksCache.push(toolCallChunk);
             }
           }
         }
@@ -261,22 +297,24 @@ function createOpenAIStreamingResponse(
             output_tokens: data.usage.completion_tokens,
             total_tokens: data.usage.total_tokens,
           };
-          yield {
-            type: "usage",
+          const usageChunk = {
+            type: "usage" as const,
             usage,
           };
+          chunksCache.push(usageChunk);
         }
         
         if (choice.finish_reason) {
-          const finalResponse: LLMResponse = {
+          const hasReasoning = !!collectedReasoning.trim();
+          finalResponse = {
             service: requestConfig.service,
             model: data.model,
             content: collectedContent,
-            reasoning: undefined, // Groq doesn't support reasoning
+            reasoning: collectedReasoning || undefined,
             toolCalls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
             capabilities: {
               hasText: !!collectedContent.trim(),
-              hasReasoning: false,
+              hasReasoning,
               hasToolCalls: collectedToolCalls.length > 0,
             },
             usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
@@ -285,18 +323,29 @@ function createOpenAIStreamingResponse(
               {
                 role: "assistant",
                 content: collectedContent,
+                reasoning: collectedReasoning || undefined,
               },
             ],
           };
           
-          yield {
-            type: "complete",
+          const completeChunk = {
+            type: "complete" as const,
             finalResponse,
           };
+          chunksCache.push(completeChunk);
+          isStreamComplete = true;
+          break;
         }
       } catch (error) {
         console.error("Error parsing Groq stream chunk:", error);
       }
+    }
+  };
+  
+  const chunks = async function* (): AsyncGenerator<StreamChunk> {
+    await processStream();
+    for (const chunk of chunksCache) {
+      yield chunk;
     }
   };
   
@@ -305,14 +354,7 @@ function createOpenAIStreamingResponse(
     model: requestConfig.model,
     chunks: chunks(),
     async collect(): Promise<LLMResponse> {
-      let finalResponse: LLMResponse | undefined;
-      
-      for await (const chunk of chunks()) {
-        if (chunk.type === "complete" && chunk.finalResponse) {
-          finalResponse = chunk.finalResponse;
-          break;
-        }
-      }
+      await processStream();
       
       if (!finalResponse) {
         throw new Error("Stream ended without final response");

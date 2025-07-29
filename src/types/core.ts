@@ -47,6 +47,8 @@ export interface Message {
   tool_calls?: ToolCall[];
   /** Function name for tool result messages (OpenAI legacy) */
   name?: string;
+  /** Reasoning/thinking content for supported models */
+  reasoning?: string;
 }
 
 /**
