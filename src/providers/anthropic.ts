@@ -30,8 +30,9 @@ export function createAnthropicAdapter(config: AnthropicConfig): LLMAdapter {
       };
       
       if (config.enableThinking) {
-        headers["anthropic-beta"] = "thinking-2024-12-03";
+        headers["anthropic-beta"] = "interleaved-thinking-2025-05-14";
       }
+      
       
       // Add browser-specific header for CORS support
       if (requestConfig.isBrowser || config.isBrowser) {
@@ -63,8 +64,9 @@ export function createAnthropicAdapter(config: AnthropicConfig): LLMAdapter {
       };
       
       if (config.enableThinking) {
-        headers["anthropic-beta"] = "thinking-2024-12-03";
+        headers["anthropic-beta"] = "interleaved-thinking-2025-05-14";
       }
+      
       
       // Add browser-specific header for CORS support
       if (requestConfig.isBrowser || config.isBrowser) {

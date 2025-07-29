@@ -7,7 +7,8 @@
       "Bash(rm:*)",
       "Bash(del \"C:\\WorkSpace\\llm-adapter.js\\src\\utils\\tool-helpers.ts\")",
       "Bash(npm run lint)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "WebFetch(domain:docs.anthropic.com)"
     ],
     "deny": []
   }
