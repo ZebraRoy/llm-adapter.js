@@ -171,6 +171,8 @@ function parseOllamaResponse(data: any, requestConfig: LLMConfig): LLMResponse {
   
   const hasToolCalls = !!(message.tool_calls && message.tool_calls.length > 0);
   const hasText = !!(message.content && message.content.trim());
+  // Support reasoning content if present in OpenAI-compatible schema
+  const reasoningContent: string | undefined = message.reasoning_content || message.reasoning;
 
   const toolCalls = hasToolCalls ? message.tool_calls.map((tc: any) => ({
     id: tc.id,
@@ -182,23 +184,26 @@ function parseOllamaResponse(data: any, requestConfig: LLMConfig): LLMResponse {
     service: requestConfig.service,
     model: data.model,
     content: message.content || "",
-    reasoning: undefined, // Ollama doesn't support reasoning
+    reasoning: reasoningContent,
     toolCalls: toolCalls,
     capabilities: {
       hasText,
-      hasReasoning: false, // Ollama doesn't support reasoning
+      hasReasoning: !!(reasoningContent && reasoningContent.trim()),
       hasToolCalls,
     },
     usage: {
       input_tokens: data.usage?.prompt_tokens || 0,
       output_tokens: data.usage?.completion_tokens || 0,
       total_tokens: data.usage?.total_tokens || 0,
+      // Pass through reasoning tokens if provided by backend
+      reasoning_tokens: data.usage?.reasoning_tokens,
     },
     messages: [
       ...requestConfig.messages,
       {
         role: "assistant",
         content: message.content || "",
+        reasoning: reasoningContent,
         tool_calls: toolCalls,
       },
     ],
@@ -217,6 +222,7 @@ function createOllamaStreamingResponse(
   reader: ReadableStreamDefaultReader<Uint8Array>
 ): StreamingResponse {
   let collectedContent = "";
+  let collectedReasoning = "";
   let collectedToolCalls: ToolCall[] = [];
   let usage: Usage | undefined;
   
@@ -235,6 +241,15 @@ function createOllamaStreamingResponse(
           yield {
             type: "content",
             content: delta.content,
+          };
+        }
+
+        // Handle reasoning deltas if present
+        if (delta.reasoning) {
+          collectedReasoning += delta.reasoning;
+          yield {
+            type: "reasoning",
+            reasoning: delta.reasoning,
           };
         }
         
@@ -261,6 +276,7 @@ function createOllamaStreamingResponse(
             input_tokens: data.usage.prompt_tokens,
             output_tokens: data.usage.completion_tokens,
             total_tokens: data.usage.total_tokens,
+            reasoning_tokens: data.usage.reasoning_tokens,
           };
           yield {
             type: "usage",
@@ -273,11 +289,11 @@ function createOllamaStreamingResponse(
             service: requestConfig.service,
             model: data.model,
             content: collectedContent,
-            reasoning: undefined, // Ollama doesn't support reasoning
+            reasoning: collectedReasoning || undefined,
             toolCalls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
             capabilities: {
               hasText: !!collectedContent.trim(),
-              hasReasoning: false,
+              hasReasoning: !!collectedReasoning.trim(),
               hasToolCalls: collectedToolCalls.length > 0,
             },
             usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
@@ -286,6 +302,7 @@ function createOllamaStreamingResponse(
               {
                 role: "assistant",
                 content: collectedContent,
+                reasoning: collectedReasoning || undefined,
                 tool_calls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
               },
             ],
