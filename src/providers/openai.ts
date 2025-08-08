@@ -243,42 +243,33 @@ function createOpenAIStreamingResponse(
   let collectedReasoning = "";
   let collectedToolCalls: ToolCall[] = [];
   let usage: Usage | undefined;
-  let finalResponse: LLMResponse | undefined;
-  let chunksCache: StreamChunk[] = [];
-  let isStreamComplete = false;
+  let finalResponseStored: LLMResponse | undefined;
   
-  const processStream = async () => {
-    if (isStreamComplete) return;
-    
+  const chunks = async function* (): AsyncGenerator<StreamChunk> {
     for await (const chunk of parseSSEStream(reader)) {
       try {
         const data = JSON.parse(chunk);
         const choice = data.choices?.[0];
-        
         if (!choice) continue;
-        
-        const delta = choice.delta;
-        
+        const delta = choice.delta || {};
+
         if (delta.content) {
           collectedContent += delta.content;
-          const contentChunk = {
-            type: "content" as const,
+          yield {
+            type: "content",
             content: delta.content,
           };
-          chunksCache.push(contentChunk);
         }
-        
+
         if (delta.reasoning_content) {
           collectedReasoning += delta.reasoning_content;
-          const reasoningChunk = {
-            type: "reasoning" as const,
+          yield {
+            type: "reasoning",
             reasoning: delta.reasoning_content,
           };
-          chunksCache.push(reasoningChunk);
         }
-        
+
         if (delta.tool_calls) {
-          // Handle tool call streaming
           for (const toolCall of delta.tool_calls) {
             if (toolCall.function?.name) {
               const newToolCall: ToolCall = {
@@ -287,15 +278,14 @@ function createOpenAIStreamingResponse(
                 input: JSON.parse(toolCall.function.arguments || "{}"),
               };
               collectedToolCalls.push(newToolCall);
-              const toolCallChunk = {
-                type: "tool_call" as const,
+              yield {
+                type: "tool_call",
                 toolCall: newToolCall,
               };
-              chunksCache.push(toolCallChunk);
             }
           }
         }
-        
+
         if (data.usage) {
           usage = {
             input_tokens: data.usage.prompt_tokens,
@@ -303,16 +293,15 @@ function createOpenAIStreamingResponse(
             total_tokens: data.usage.total_tokens,
             reasoning_tokens: data.usage.reasoning_tokens || undefined,
           };
-          const usageChunk = {
-            type: "usage" as const,
+          yield {
+            type: "usage",
             usage,
           };
-          chunksCache.push(usageChunk);
         }
-        
+
         if (choice.finish_reason) {
           const hasReasoning = !!collectedReasoning.trim();
-          finalResponse = {
+          const finalResponse: LLMResponse = {
             service: requestConfig.service,
             model: data.model,
             content: collectedContent,
@@ -334,13 +323,11 @@ function createOpenAIStreamingResponse(
               },
             ],
           };
-          
-          const completeChunk = {
-            type: "complete" as const,
+          finalResponseStored = finalResponse;
+          yield {
+            type: "complete",
             finalResponse,
           };
-          chunksCache.push(completeChunk);
-          isStreamComplete = true;
           break;
         }
       } catch (error) {
@@ -349,25 +336,22 @@ function createOpenAIStreamingResponse(
     }
   };
   
-  const chunks = async function* (): AsyncGenerator<StreamChunk> {
-    await processStream();
-    for (const chunk of chunksCache) {
-      yield chunk;
-    }
-  };
-  
   return {
     service: requestConfig.service,
     model: requestConfig.model,
     chunks: chunks(),
     async collect(): Promise<LLMResponse> {
-      await processStream();
-      
-      if (!finalResponse) {
+      if (finalResponseStored) return finalResponseStored;
+      for await (const chunk of chunks()) {
+        if (chunk.type === "complete" && chunk.finalResponse) {
+          finalResponseStored = chunk.finalResponse;
+          break;
+        }
+      }
+      if (!finalResponseStored) {
         throw new Error("Stream ended without final response");
       }
-      
-      return finalResponse;
+      return finalResponseStored;
     },
   };
 } 
