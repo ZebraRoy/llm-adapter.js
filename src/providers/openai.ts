@@ -249,14 +249,72 @@ function createOpenAIStreamingResponse(
   let collectedToolCalls: ToolCall[] = [];
   let usage: Usage | undefined;
   let finalResponseStored: LLMResponse | undefined;
+  let streamModel: string | undefined;
+  let sawFinishSignal = false;
   
   const chunks = async function* (): AsyncGenerator<StreamChunk> {
     for await (const chunk of parseSSEStream(reader)) {
       try {
         const data = JSON.parse(chunk);
+        // Track model if present
+        if (data.model) {
+          streamModel = data.model;
+        }
+
+        // Handle usage chunks even if choices are empty (OpenAI sends usage after finish)
+        if (data.usage) {
+          usage = {
+            input_tokens: data.usage.prompt_tokens,
+            output_tokens: data.usage.completion_tokens,
+            total_tokens: data.usage.total_tokens,
+            reasoning_tokens: data.usage.reasoning_tokens || undefined,
+          };
+          yield {
+            type: "usage",
+            usage,
+          };
+
+          // If we already saw finish, we can now emit the final response
+          if (sawFinishSignal && !finalResponseStored) {
+            const hasReasoning = !!collectedReasoning.trim();
+            const finalResponse: LLMResponse = {
+              service: requestConfig.service,
+              model: streamModel || data.model || requestConfig.model,
+              content: collectedContent,
+              reasoning: collectedReasoning || undefined,
+              toolCalls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
+              capabilities: {
+                hasText: !!collectedContent.trim(),
+                hasReasoning,
+                hasToolCalls: collectedToolCalls.length > 0,
+              },
+              usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+              messages: [
+                ...requestConfig.messages,
+                {
+                  role: "assistant",
+                  content: collectedContent,
+                  tool_calls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
+                  reasoning: collectedReasoning || undefined,
+                },
+              ],
+            };
+            finalResponseStored = finalResponse;
+            yield {
+              type: "complete",
+              finalResponse,
+            };
+            break;
+          }
+        }
+
         const choice = data.choices?.[0];
-        if (!choice) continue;
-        const delta = choice.delta || {};
+        const delta = choice?.delta || {};
+
+        if (!choice && !data.usage) {
+          // Nothing actionable in this chunk
+          continue;
+        }
 
         if (delta.content) {
           collectedContent += delta.content;
@@ -304,40 +362,77 @@ function createOpenAIStreamingResponse(
           };
         }
 
-        if (choice.finish_reason) {
-          const hasReasoning = !!collectedReasoning.trim();
-          const finalResponse: LLMResponse = {
-            service: requestConfig.service,
-            model: data.model,
-            content: collectedContent,
-            reasoning: collectedReasoning || undefined,
-            toolCalls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
-            capabilities: {
-              hasText: !!collectedContent.trim(),
-              hasReasoning,
-              hasToolCalls: collectedToolCalls.length > 0,
-            },
-            usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
-            messages: [
-              ...requestConfig.messages,
-              {
-                role: "assistant",
-                content: collectedContent,
-                tool_calls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
-                reasoning: collectedReasoning || undefined,
+        if (choice && choice.finish_reason) {
+          // Mark that we reached finish; usage may arrive in a later chunk
+          sawFinishSignal = true;
+
+          if (usage && !finalResponseStored) {
+            const hasReasoning = !!collectedReasoning.trim();
+            const finalResponse: LLMResponse = {
+              service: requestConfig.service,
+              model: streamModel || data.model || requestConfig.model,
+              content: collectedContent,
+              reasoning: collectedReasoning || undefined,
+              toolCalls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
+              capabilities: {
+                hasText: !!collectedContent.trim(),
+                hasReasoning,
+                hasToolCalls: collectedToolCalls.length > 0,
               },
-            ],
-          };
-          finalResponseStored = finalResponse;
-          yield {
-            type: "complete",
-            finalResponse,
-          };
-          break;
+              usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+              messages: [
+                ...requestConfig.messages,
+                {
+                  role: "assistant",
+                  content: collectedContent,
+                  tool_calls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
+                  reasoning: collectedReasoning || undefined,
+                },
+              ],
+            };
+            finalResponseStored = finalResponse;
+            yield {
+              type: "complete",
+              finalResponse,
+            };
+            break;
+          }
         }
       } catch (error) {
         console.error("Error parsing OpenAI stream chunk:", error);
       }
+    }
+
+    // If stream ended (e.g., [DONE]) but we haven't emitted final response yet, emit now
+    if (!finalResponseStored) {
+      const hasReasoning = !!collectedReasoning.trim();
+      const finalResponse: LLMResponse = {
+        service: requestConfig.service,
+        model: streamModel || requestConfig.model,
+        content: collectedContent,
+        reasoning: collectedReasoning || undefined,
+        toolCalls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
+        capabilities: {
+          hasText: !!collectedContent.trim(),
+          hasReasoning,
+          hasToolCalls: collectedToolCalls.length > 0,
+        },
+        usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+        messages: [
+          ...requestConfig.messages,
+          {
+            role: "assistant",
+            content: collectedContent,
+            tool_calls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
+            reasoning: collectedReasoning || undefined,
+          },
+        ],
+      };
+      finalResponseStored = finalResponse;
+      yield {
+        type: "complete",
+        finalResponse,
+      };
     }
   };
   

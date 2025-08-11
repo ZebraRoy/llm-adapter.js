@@ -225,16 +225,21 @@ function createOllamaStreamingResponse(
   let collectedReasoning = "";
   let collectedToolCalls: ToolCall[] = [];
   let usage: Usage | undefined;
+  let streamModel: string | undefined;
+  let sawFinishSignal = false;
   
   const chunks = async function* (): AsyncGenerator<StreamChunk> {
     for await (const chunk of parseSSEStream(reader)) {
       try {
         const data = JSON.parse(chunk);
+        if (data.model) {
+          streamModel = data.model;
+        }
+
         const choice = data.choices?.[0];
+        const delta = choice?.delta;
         
-        if (!choice) continue;
-        
-        const delta = choice.delta;
+        if (!choice && !data.usage) continue;
         
         if (delta.content) {
           collectedContent += delta.content;
@@ -282,12 +287,17 @@ function createOllamaStreamingResponse(
             type: "usage",
             usage,
           };
+
+          if (sawFinishSignal) {
+            // In case finish was signaled before usage, we will finalize at end
+          }
         }
         
-        if (choice.finish_reason) {
+        if (choice && choice.finish_reason) {
+          sawFinishSignal = true;
           const finalResponse: LLMResponse = {
             service: requestConfig.service,
-            model: data.model,
+            model: streamModel || requestConfig.model,
             content: collectedContent,
             reasoning: collectedReasoning || undefined,
             toolCalls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
