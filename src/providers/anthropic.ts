@@ -248,11 +248,30 @@ function createAnthropicStreamingResponse(
   let collectedReasoning = "";
   let collectedToolCalls: ToolCall[] = [];
   let usage: Usage | undefined;
+  // Track usage across streaming events. Anthropic provides input tokens at
+  // message_start and output tokens on subsequent message_delta events.
+  let inputTokensFromStart = 0;
+  let outputTokensLatest = 0;
   
   const chunks = async function* (): AsyncGenerator<StreamChunk> {
     for await (const chunk of parseSSEStream(reader)) {
       try {
         const data = JSON.parse(chunk);
+
+        // Capture initial usage from message_start
+        if (data.type === "message_start" && data.message?.usage) {
+          inputTokensFromStart = data.message.usage.input_tokens || 0;
+          outputTokensLatest = data.message.usage.output_tokens || 0;
+          usage = {
+            input_tokens: inputTokensFromStart,
+            output_tokens: outputTokensLatest,
+            total_tokens: inputTokensFromStart + outputTokensLatest,
+          };
+          yield {
+            type: "usage",
+            usage,
+          };
+        }
         
         if (data.type === "content_block_delta" && data.delta) {
           if (data.delta.type === "text_delta") {
@@ -284,10 +303,12 @@ function createAnthropicStreamingResponse(
         }
         
         if (data.type === "message_delta" && data.usage) {
+          // Update latest output tokens; input tokens were provided at start
+          outputTokensLatest = data.usage.output_tokens || outputTokensLatest || 0;
           usage = {
-            input_tokens: data.usage.input_tokens || 0,
-            output_tokens: data.usage.output_tokens || 0,
-            total_tokens: (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0),
+            input_tokens: inputTokensFromStart,
+            output_tokens: outputTokensLatest,
+            total_tokens: inputTokensFromStart + outputTokensLatest,
           };
           yield {
             type: "usage",
@@ -307,7 +328,7 @@ function createAnthropicStreamingResponse(
               hasReasoning: !!collectedReasoning.trim(),
               hasToolCalls: collectedToolCalls.length > 0,
             },
-            usage: usage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+            usage: usage || { input_tokens: inputTokensFromStart, output_tokens: outputTokensLatest, total_tokens: inputTokensFromStart + outputTokensLatest },
             messages: [
               ...requestConfig.messages,
               {
