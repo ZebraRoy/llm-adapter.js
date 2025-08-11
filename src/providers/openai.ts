@@ -175,6 +175,11 @@ function formatOpenAIRequest(config: LLMConfig, defaultModel: string, stream = f
     body.reasoning_effort = config.reasoningEffort;
   }
 
+  // Request token usage in streaming responses when streaming is enabled
+  if (stream) {
+    body.stream_options = { include_usage: true };
+  }
+
   return body;
 }
 
