@@ -47,15 +47,17 @@ async function completeToolCallChain(initialConfig: ServiceConfig) {
       // Handle cases where content is null but tool_calls exist (OpenAI pattern)
       const assistantMessage = {
         role: "assistant" as const,
-        ...(response.content && response.content.trim() && { content: response.content }),
-        ...(response.toolCalls && response.toolCalls.length > 0 && { tool_calls: response.toolCalls }),
+        ...(response.content &&
+          response.content.trim() && { content: response.content }),
+        ...(response.toolCalls &&
+          response.toolCalls.length > 0 && { tool_calls: response.toolCalls }),
       };
-      
+
       // Ensure message has either content or tool_calls (required by OpenAI)
       if (!assistantMessage.content && !assistantMessage.tool_calls) {
         assistantMessage.content = " "; // Minimal fallback
       }
-      
+
       config.messages.push(assistantMessage);
 
       // Execute all tool calls
@@ -176,6 +178,14 @@ async function streamingToolChain(config: ServiceConfig) {
           process.stdout.write(chunk.content); // Real-time text
           break;
 
+        case "reasoning":
+          // Optional: Handle reasoning/thinking tokens from providers that support it
+          break;
+
+        case "usage":
+          // Optional: Track token usage as it streams
+          break;
+
         case "tool_call":
           // Collect tool calls as they stream in
           if (chunk.toolCall?.name && chunk.toolCall?.input) {
@@ -188,15 +198,21 @@ async function streamingToolChain(config: ServiceConfig) {
             // Add assistant's response to conversation history
             const assistantMessage = {
               role: "assistant" as const,
-              ...(chunk.finalResponse!.content && chunk.finalResponse!.content.trim() && { content: chunk.finalResponse!.content }),
-              ...(pendingToolCalls && pendingToolCalls.length > 0 && { tool_calls: pendingToolCalls }),
+              ...(chunk.finalResponse!.content &&
+                chunk.finalResponse!.content.trim() && {
+                  content: chunk.finalResponse!.content,
+                }),
+              ...(pendingToolCalls &&
+                pendingToolCalls.length > 0 && {
+                  tool_calls: pendingToolCalls,
+                }),
             };
-            
+
             // Ensure message has either content or tool_calls
             if (!assistantMessage.content && !assistantMessage.tool_calls) {
               assistantMessage.content = " "; // Minimal fallback
             }
-            
+
             config.messages.push(assistantMessage);
 
             // Execute all pending tools
@@ -235,15 +251,19 @@ async function robustToolChain(config: ServiceConfig) {
         // Handle OpenAI's pattern where content can be null when tool_calls exist
         const assistantMessage = {
           role: "assistant" as const,
-          ...(response.content && response.content.trim() && { content: response.content }),
-          ...(response.toolCalls && response.toolCalls.length > 0 && { tool_calls: response.toolCalls }),
+          ...(response.content &&
+            response.content.trim() && { content: response.content }),
+          ...(response.toolCalls &&
+            response.toolCalls.length > 0 && {
+              tool_calls: response.toolCalls,
+            }),
         };
-        
+
         // Ensure message has either content or tool_calls (OpenAI requirement)
         if (!assistantMessage.content && !assistantMessage.tool_calls) {
           assistantMessage.content = " "; // Minimal fallback
         }
-        
+
         config.messages.push(assistantMessage);
 
         // Execute tools with error handling
@@ -285,6 +305,7 @@ async function robustToolChain(config: ServiceConfig) {
 ## 🚨 Critical Fix: OpenAI Content Null Issue
 
 ### The Problem
+
 When OpenAI makes tool calls, it can return `content: null` instead of an empty string:
 
 ```json
@@ -300,21 +321,26 @@ When OpenAI makes tool calls, it can return `content: null` instead of an empty 
 ```
 
 ### The Error
+
 If you use `response.content || ''`, you'll get:
+
 ```
 Error: Each message must have content, tool_calls, or be a tool_result
 ```
 
 ### The Solution
+
 Handle null content properly when tool_calls exist:
 
 ```typescript
 const assistantMessage = {
   role: "assistant" as const,
   // Only add content if it exists and is not empty
-  ...(response.content && response.content.trim() && { content: response.content }),
-  // Add tool_calls if they exist  
-  ...(response.toolCalls && response.toolCalls.length > 0 && { tool_calls: response.toolCalls }),
+  ...(response.content &&
+    response.content.trim() && { content: response.content }),
+  // Add tool_calls if they exist
+  ...(response.toolCalls &&
+    response.toolCalls.length > 0 && { tool_calls: response.toolCalls }),
 };
 
 // Ensure message has either content or tool_calls (OpenAI requirement)
@@ -326,28 +352,35 @@ config.messages.push(assistantMessage);
 ```
 
 ### For Your Failed Code
+
 Replace this:
+
 ```typescript
 // ❌ WRONG: Will fail when content is null
 conversationHistory.push({
-  role: 'assistant',
-  content: currentResponse.content || '', // Empty string fails validation!
+  role: "assistant",
+  content: currentResponse.content || "", // Empty string fails validation!
   tool_calls: currentResponse.toolCalls,
-})
+});
 ```
 
 With this:
+
 ```typescript
 // ✅ CORRECT: Handles null content properly
 const assistantMessage = {
-  role: 'assistant' as const,
-  ...(currentResponse.content && currentResponse.content.trim() && { content: currentResponse.content }),
-  ...(currentResponse.toolCalls && currentResponse.toolCalls.length > 0 && { tool_calls: currentResponse.toolCalls }),
+  role: "assistant" as const,
+  ...(currentResponse.content &&
+    currentResponse.content.trim() && { content: currentResponse.content }),
+  ...(currentResponse.toolCalls &&
+    currentResponse.toolCalls.length > 0 && {
+      tool_calls: currentResponse.toolCalls,
+    }),
 };
 
 // Ensure message has either content or tool_calls
 if (!assistantMessage.content && !assistantMessage.tool_calls) {
-  assistantMessage.content = ' '; // Minimal fallback
+  assistantMessage.content = " "; // Minimal fallback
 }
 
 conversationHistory.push(assistantMessage);
@@ -361,8 +394,10 @@ conversationHistory.push(assistantMessage);
 // ✅ CORRECT: Add assistant response to existing history (handle null content)
 const assistantMessage = {
   role: "assistant" as const,
-  ...(response.content && response.content.trim() && { content: response.content }),
-  ...(response.toolCalls && response.toolCalls.length > 0 && { tool_calls: response.toolCalls }),
+  ...(response.content &&
+    response.content.trim() && { content: response.content }),
+  ...(response.toolCalls &&
+    response.toolCalls.length > 0 && { tool_calls: response.toolCalls }),
 };
 
 // Ensure message has either content or tool_calls (OpenAI requirement)
@@ -453,15 +488,17 @@ export async function runCompleteToolChain(
       // Add assistant's response to conversation
       const assistantMessage = {
         role: "assistant" as const,
-        ...(response.content && response.content.trim() && { content: response.content }),
-        ...(response.toolCalls && response.toolCalls.length > 0 && { tool_calls: response.toolCalls }),
+        ...(response.content &&
+          response.content.trim() && { content: response.content }),
+        ...(response.toolCalls &&
+          response.toolCalls.length > 0 && { tool_calls: response.toolCalls }),
       };
-      
+
       // Ensure message has either content or tool_calls (OpenAI requirement)
       if (!assistantMessage.content && !assistantMessage.tool_calls) {
         assistantMessage.content = " "; // Minimal fallback
       }
-      
+
       currentConfig.messages.push(assistantMessage);
 
       // Execute all tools
