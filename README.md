@@ -19,6 +19,10 @@ A unified TypeScript library for working with multiple LLM providers through a c
 npm install llm-adapter
 ```
 
+Requirements:
+
+- Node.js >= 22 (per `package.json` engines)
+
 ## Quick Start
 
 ```typescript
@@ -27,11 +31,57 @@ import { sendMessage } from "llm-adapter";
 const response = await sendMessage({
   service: "openai",
   apiKey: "your-api-key",
-  model: "gpt-3.5-turbo",
+  model: "gpt-4o-mini", // or another available model
   messages: [{ role: "user", content: "Hello!" }],
 });
 
 console.log(response.content);
+```
+
+### Response shape at a glance
+
+All providers return a unified response object:
+
+```typescript
+type LLMResponse = {
+  service:
+    | "openai"
+    | "anthropic"
+    | "google"
+    | "ollama"
+    | "groq"
+    | "deepseek"
+    | "xai";
+  model: string;
+  content: string; // Primary text content
+  reasoning?: string; // Provider-supported reasoning/thinking, when available
+  toolCalls?: Array<{
+    // Tool calls the assistant wants you to run
+    id: string;
+    name: string;
+    input: Record<string, unknown>;
+  }>;
+  capabilities: {
+    hasText: boolean;
+    hasReasoning: boolean;
+    hasToolCalls: boolean;
+  };
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    reasoning_tokens?: number; // When provided by the service
+  };
+  messages: Array<{
+    // Your original messages plus the assistant reply
+    role: "user" | "assistant" | "system" | "tool_call" | "tool_result";
+    content: string | any[];
+    tool_call_id?: string;
+    tool_calls?: LLMResponse["toolCalls"];
+    name?: string;
+    reasoning?: string;
+  }>;
+};
 ```
 
 ## Core API Functions
@@ -69,23 +119,37 @@ Send a conversation to an LLM provider with streaming response.
 ```typescript
 import { streamMessage } from "llm-adapter";
 
-const streamResponse = await streamMessage({
+const stream = await streamMessage({
   service: "openai",
   apiKey: "your-api-key",
-  model: "gpt-3.5-turbo",
+  model: "gpt-4o-mini",
   messages: [{ role: "user", content: "Write a short story" }],
 });
 
 // Process chunks as they arrive
-for await (const chunk of streamResponse.chunks) {
-  if (chunk.type === "content") {
-    process.stdout.write(chunk.content || "");
+for await (const chunk of stream.chunks) {
+  switch (chunk.type) {
+    case "content":
+      process.stdout.write(chunk.content ?? "");
+      break;
+    case "reasoning":
+      // Optional: stream reasoning/thinking when supported
+      break;
+    case "tool_call":
+      // The assistant is asking you to run a tool
+      break;
+    case "usage":
+      // Token usage updates during stream
+      break;
+    case "complete":
+      // Final assembled response available at chunk.finalResponse
+      break;
   }
 }
 
 // Or collect the full response
-const fullResponse = await streamResponse.collect();
-console.log(fullResponse.content);
+const full = await stream.collect();
+console.log(full.content);
 ```
 
 ### `askQuestion(config, question, options?)` - Convenience function
@@ -151,7 +215,7 @@ const anthropicConfig: AnthropicConfig = {
 const googleConfig: GoogleConfig = {
   service: "google",
   apiKey: "your-google-key",
-  model: "gemini-pro",
+  model: "gemini-2.5-pro", // or "gemini-2.5-flash"
   messages: [
     /* messages */
   ],
@@ -171,7 +235,7 @@ const ollamaConfig: OllamaConfig = {
 const groqConfig: GroqConfig = {
   service: "groq",
   apiKey: "your-groq-key",
-  model: "mixtral-8x7b-32768",
+  model: "deepseek-r1-distill-llama-70b", // or other Groq-hosted models
   messages: [
     /* messages */
   ],
@@ -200,21 +264,21 @@ const xaiConfig: XAIConfig = {
 
 ### Provider Capabilities
 
-| Provider  | Tool Calling | Reasoning | Streaming | Notes                                             |
-| --------- | ------------ | --------- | --------- | ------------------------------------------------- |
-| OpenAI    | ✅           | ✅        | ✅        | o1/o3 series with reasoning; GPT-4 with tools    |
-| Anthropic | ✅           | ✅        | ✅        | Extended thinking via `budgetTokens`              |
-| Google    | ✅           | ✅        | ✅        | Gemini 2.5 series with built-in thinking         |
-| Ollama    | ✅\*         | ✅\*      | ✅        | OpenAI compatible; \*depends on model capabilities |
-| Groq      | ✅           | ✅        | ✅        | DeepSeek-R1, Qwen QwQ/3 reasoning models         |
-| DeepSeek  | ✅           | ✅        | ✅        | DeepSeek-R1 reasoning models                      |
-| xAI       | ✅           | ✅        | ✅        | Grok 3/4 with built-in reasoning                 |
+| Provider  | Tool Calling | Reasoning | Streaming | Notes                                            |
+| --------- | ------------ | --------- | --------- | ------------------------------------------------ |
+| OpenAI    | ✅           | ✅        | ✅        | o1/o3 series expose reasoning when supported     |
+| Anthropic | ✅           | ✅        | ✅        | Extended thinking via `budgetTokens`             |
+| Google    | ✅           | ✅        | ✅        | Gemini 2.5 series supports thought summaries     |
+| Ollama    | ✅\*         | ✅\*      | ✅        | OpenAI-compatible; depends on the selected model |
+| Groq      | ✅           | ✅        | ✅        | Reasoning models like DeepSeek-R1, Qwen QwQ/3    |
+| DeepSeek  | ✅           | ✅        | ✅        | DeepSeek-R1 reasoning models                     |
+| xAI       | ✅           | ✅        | ✅        | Grok 3/4                                         |
 
-_Ollama supports tool calling and reasoning if the underlying model supports these features (e.g., DeepSeek-R1, DeepSeek-R1-Tool-Calling)._
+\* Ollama exposes capabilities supported by the underlying model.
 
 ### Ollama OpenAI Compatibility
 
-**Important:** As of version 2.x, this library uses Ollama's OpenAI-compatible API endpoints instead of the native Ollama format. This provides better tool calling support and consistency with other providers.
+**Important:** This library uses Ollama's OpenAI-compatible API endpoints instead of the native Ollama format. This provides better tool calling support and consistency with other providers.
 
 #### Endpoint Requirements
 
@@ -240,11 +304,7 @@ const badConfig: OllamaConfig = {
 
 #### Ollama Server Setup
 
-Ensure your Ollama server supports OpenAI-compatible endpoints:
-
-1. **Update Ollama** to version 0.1.7+ (OpenAI compatibility added)
-2. **Start Ollama** with default settings - OpenAI endpoints are enabled by default
-3. **Test compatibility** - verify `/v1/chat/completions` endpoint works:
+Ensure your Ollama server exposes OpenAI-compatible endpoints (modern versions include this by default). Test that `/v1/chat/completions` works:
 
 ```bash
 # Test Ollama OpenAI compatibility
@@ -652,23 +712,21 @@ async function multiTurnExample() {
 
 This pattern ensures that the LLM has full context of what tools were called and their results, enabling natural follow-up conversations.
 
-### Provider-Specific Tool Call Requirements:
+### Provider-Specific Tool Call Requirements
 
-| Provider      | Tool Call ID  | Required Fields        | Notes                            |
-| ------------- | ------------- | ---------------------- | -------------------------------- |
-| **OpenAI**    | Real IDs      | `tool_call_id`         | Standard OpenAI format           |
-| **Anthropic** | Real IDs      | `tool_call_id`         | Converted from `tool_use_id`     |
-| **Google**    | Generated IDs | `name` (function name) | Matches by function name, not ID |
-| **Groq**      | Real IDs      | `tool_call_id`         | OpenAI-compatible                |
-| **DeepSeek**  | Real IDs      | `tool_call_id`         | OpenAI-compatible                |
-| **xAI**       | Real IDs      | `tool_call_id`         | OpenAI-compatible                |
-| **Ollama**    | Real IDs      | `tool_call_id`         | OpenAI-compatible (model dependent) |
+| Provider      | Tool Call ID  | Required Fields        | Notes                               |
+| ------------- | ------------- | ---------------------- | ----------------------------------- |
+| **OpenAI**    | Real IDs      | `tool_call_id`         | Standard OpenAI format              |
+| **Anthropic** | Real IDs      | `tool_call_id`         | Converted from `tool_use_id`        |
+| **Google**    | Generated IDs | `name` (function name) | Matches by function name, not ID    |
+| **Groq**      | Real IDs      | `tool_call_id`         | OpenAI-compatible                   |
+| **DeepSeek**  | Real IDs      | `tool_call_id`         | OpenAI-compatible                   |
+| **xAI**       | Real IDs      | `tool_call_id`         | OpenAI-compatible                   |
+| **Ollama**    | Real IDs      | `tool_call_id`         | OpenAI-compatible (model-dependent) |
 
 **Important for Google users**: When using Google Gemini, ensure your tool result messages include the `name` field matching the function name, as Google's API uses function names rather than IDs for matching.
 
 ### Reasoning Access (Multiple Providers)
-
-**Latest Update (2025):** Most major providers now support reasoning/thinking modes with their latest models.
 
 #### Anthropic Claude (Thinking Mode)
 
@@ -702,16 +760,17 @@ import { sendMessage, hasReasoning, type OpenAIConfig } from "llm-adapter";
 const config: OpenAIConfig = {
   service: "openai",
   apiKey: "your-api-key",
-  model: "o1-preview", // or "o1-mini", "o3-mini"
+  model: "o3-mini", // or other supported reasoning models
   messages: [
-    { role: "user", content: "Write a complex algorithm to solve the traveling salesman problem" },
+    {
+      role: "user",
+      content:
+        "Write a complex algorithm to solve the traveling salesman problem",
+    },
   ],
 };
 
-// Optional: Control reasoning effort (2024-12-01-preview API)
-const response = await sendMessage(config, {
-  reasoningEffort: "high", // "low", "medium", "high"
-});
+const response = await sendMessage(config, { reasoningEffort: "high" });
 
 if (hasReasoning(response)) {
   console.log("Reasoning tokens:", response.usage.reasoning_tokens);
@@ -729,7 +788,10 @@ const config: GoogleConfig = {
   apiKey: "your-api-key",
   model: "gemini-2.5-pro", // or "gemini-2.5-flash"
   messages: [
-    { role: "user", content: "Analyze this complex data pattern and find anomalies" },
+    {
+      role: "user",
+      content: "Analyze this complex data pattern and find anomalies",
+    },
   ],
 };
 
@@ -753,7 +815,10 @@ const config: XAIConfig = {
   apiKey: "your-api-key",
   model: "grok-3", // or "grok-4" (always reasoning mode)
   messages: [
-    { role: "user", content: "Debug this complex code and explain the logic flow" },
+    {
+      role: "user",
+      content: "Debug this complex code and explain the logic flow",
+    },
   ],
 };
 
@@ -776,7 +841,11 @@ const config: GroqConfig = {
   apiKey: "your-api-key",
   model: "qwen-qwq-32b", // or "deepseek-r1-distill-llama-70b"
   messages: [
-    { role: "user", content: "Solve this step-by-step: How would you optimize a database query?" },
+    {
+      role: "user",
+      content:
+        "Solve this step-by-step: How would you optimize a database query?",
+    },
   ],
 };
 
@@ -814,14 +883,14 @@ if (hasReasoning(response)) {
 
 ### Key Reasoning Features by Provider
 
-| Provider  | Reasoning Models | Control Parameters | Special Features |
-| --------- | ---------------- | ------------------ | ---------------- |
-| **OpenAI** | o1, o1-mini, o3-mini | `reasoningEffort` | Reasoning token counting |
-| **Anthropic** | All models | `budgetTokens` | Extended thinking budget |
-| **Google** | Gemini 2.5 Pro/Flash | `thinkingBudget`, `includeThoughts` | Thought summaries |
-| **xAI** | Grok 3, Grok 4 | `reasoningEffort` | Built-in reasoning (Grok 4) |
-| **Groq** | Qwen QwQ/3, DeepSeek-R1 | `reasoningFormat`, `reasoningEffort` | Ultra-fast reasoning |
-| **DeepSeek** | DeepSeek-R1 series | Built-in | Native reasoning models |
+| Provider      | Reasoning Models        | Control Parameters                   | Special Features            |
+| ------------- | ----------------------- | ------------------------------------ | --------------------------- |
+| **OpenAI**    | o1, o3 series           | `reasoningEffort`                    | Reasoning token counting    |
+| **Anthropic** | All models              | `budgetTokens`                       | Extended thinking budget    |
+| **Google**    | Gemini 2.5 Pro/Flash    | `thinkingBudget`, `includeThoughts`  | Thought summaries           |
+| **xAI**       | Grok 3, Grok 4          | `reasoningEffort`                    | Built-in reasoning (Grok 4) |
+| **Groq**      | Qwen QwQ/3, DeepSeek-R1 | `reasoningFormat`, `reasoningEffort` | Ultra-fast reasoning        |
+| **DeepSeek**  | DeepSeek-R1 series      | Built-in                             | Native reasoning models     |
 
 ### Response Type Checking
 
@@ -1117,7 +1186,7 @@ const response = await sendMessage({
 
 ### Other Providers in Browser
 
-Most other providers have CORS restrictions for direct browser usage. The library will show helpful warnings:
+CORS behavior for other providers can vary by endpoint and over time. The library will show helpful warnings; avoid exposing API keys in the client and prefer server-side or a lightweight proxy:
 
 ```typescript
 const response = await sendMessage({
@@ -1133,7 +1202,7 @@ const response = await sendMessage({
 
 - **✅ Anthropic**: Full support with `isBrowser: true`
 - **✅ Ollama**: Works if your local server has CORS enabled
-- **⚠️ OpenAI, Google, Groq, DeepSeek, xAI**: Require proxy server due to CORS policy
+- **⚠️ OpenAI, Google, Groq, DeepSeek, xAI**: CORS behavior varies and may work in some environments. Regardless, exposing API keys in the browser is insecure—prefer server-side or a lightweight proxy, or use provider-recommended browser auth/ephemeral tokens.
 
 ### Using with Ask Functions
 
