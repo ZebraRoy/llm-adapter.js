@@ -277,8 +277,24 @@ function createOpenAIStreamingResponse(
             usage,
           };
 
-          // If we already saw finish, we can now emit the final response
+          // If we already saw finish, finalize any pending tool calls and emit final response now
           if (sawFinishSignal && !finalResponseStored) {
+            // Finalize tool calls before completing (arguments may have streamed in fragments)
+            for (const acc of Object.values(toolCallAccumulatorsById)) {
+              if (!acc.emitted && acc.name) {
+                try {
+                  const parsed = JSON.parse(acc.args || "{}");
+                  const newToolCall: ToolCall = { id: acc.id, name: acc.name, input: parsed };
+                  collectedToolCalls.push(newToolCall);
+                  acc.emitted = true;
+                  // Emit tool_call chunk prior to completion so consumers can act on it
+                  yield { type: "tool_call", toolCall: newToolCall };
+                } catch {
+                  // Ignore if args are not valid JSON
+                }
+              }
+            }
+
             const hasReasoning = !!collectedReasoning.trim();
             const finalResponse: LLMResponse = {
               service: requestConfig.service,

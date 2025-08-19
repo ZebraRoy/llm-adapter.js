@@ -271,6 +271,20 @@ function createOpenAIStreamingResponse(
           chunksCache.push(usageChunk);
 
           if (sawFinishSignal && !finalResponse) {
+            // Finalize any pending tool calls before completing (arguments may have streamed in fragments)
+            for (const acc of Object.values(toolCallAccumulatorsById)) {
+              if (acc.name) {
+                try {
+                  const parsed = JSON.parse(acc.args || '{}');
+                  const newToolCall: ToolCall = { id: acc.id, name: acc.name, input: parsed };
+                  collectedToolCalls.push(newToolCall);
+                  const toolCallChunk = { type: "tool_call" as const, toolCall: newToolCall };
+                  chunksCache.push(toolCallChunk);
+                } catch {
+                  // ignore invalid JSON
+                }
+              }
+            }
             const hasReasoning = !!collectedReasoning.trim();
             finalResponse = {
               service: requestConfig.service,
