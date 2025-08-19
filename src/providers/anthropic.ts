@@ -252,6 +252,8 @@ function createAnthropicStreamingResponse(
   // message_start and output tokens on subsequent message_delta events.
   let inputTokensFromStart = 0;
   let outputTokensLatest = 0;
+  // Accumulate tool_use input deltas keyed by content block index
+  const toolUseByIndex: Record<number, { id: string; name: string; partialJson: string }> = {};
   
   const chunks = async function* (): AsyncGenerator<StreamChunk> {
     for await (const chunk of parseSSEStream(reader)) {
@@ -286,20 +288,42 @@ function createAnthropicStreamingResponse(
               type: "reasoning",
               reasoning: data.delta.thinking,
             };
+          } else if (data.delta.type === "input_json_delta") {
+            const idx: number = data.index ?? 0;
+            if (!toolUseByIndex[idx]) {
+              // In rare cases delta may arrive before start; initialize placeholder
+              toolUseByIndex[idx] = { id: `pending_${idx}`, name: "", partialJson: "" };
+            }
+            toolUseByIndex[idx].partialJson += data.delta.partial_json || "";
           }
         }
         
         if (data.type === "content_block_start" && data.content_block?.type === "tool_use") {
-          const toolCall: ToolCall = {
+          const idx: number = data.index ?? 0;
+          toolUseByIndex[idx] = {
             id: data.content_block.id,
             name: data.content_block.name,
-            input: data.content_block.input,
+            partialJson: "",
           };
-          collectedToolCalls.push(toolCall);
-          yield {
-            type: "tool_call",
-            toolCall,
-          };
+        }
+
+        if (data.type === "content_block_stop") {
+          const idx: number = data.index ?? 0;
+          const acc = toolUseByIndex[idx];
+          if (acc && acc.name) {
+            try {
+              const parsed = acc.partialJson ? JSON.parse(acc.partialJson) : {};
+              const toolCall: ToolCall = {
+                id: acc.id,
+                name: acc.name,
+                input: parsed,
+              };
+              collectedToolCalls.push(toolCall);
+              yield { type: "tool_call", toolCall };
+            } catch {
+              // If parsing fails, do not emit; rely on final response without this tool
+            }
+          }
         }
         
         if (data.type === "message_delta" && data.usage) {

@@ -247,6 +247,9 @@ function createOpenAIStreamingResponse(
   let collectedContent = "";
   let collectedReasoning = "";
   let collectedToolCalls: ToolCall[] = [];
+  // Accumulate tool call deltas keyed by id, with index fallback
+  const toolCallAccumulatorsById: Record<string, { id: string; name?: string; args: string; emitted?: boolean }> = {};
+  const indexToToolCallId: Record<number, string> = {};
   let usage: Usage | undefined;
   let finalResponseStored: LLMResponse | undefined;
   let streamModel: string | undefined;
@@ -334,17 +337,46 @@ function createOpenAIStreamingResponse(
 
         if (delta.tool_calls) {
           for (const toolCall of delta.tool_calls) {
-            if (toolCall.function?.name) {
-              const newToolCall: ToolCall = {
-                id: toolCall.id,
-                name: toolCall.function.name,
-                input: JSON.parse(toolCall.function.arguments || "{}"),
-              };
-              collectedToolCalls.push(newToolCall);
-              yield {
-                type: "tool_call",
-                toolCall: newToolCall,
-              };
+            const idx: number = (toolCall as any).index ?? 0;
+            const incomingId: string | undefined = (toolCall as any).id;
+
+            // Resolve or create an id for this index
+            let accId = incomingId || indexToToolCallId[idx];
+            if (!accId) {
+              accId = `pending_${idx}`;
+              indexToToolCallId[idx] = accId;
+            }
+            // If this chunk carries a concrete id and the index wasn't mapped yet, bind it now
+            if (incomingId && !indexToToolCallId[idx]) {
+              indexToToolCallId[idx] = incomingId;
+              accId = incomingId;
+            }
+
+            // If a real id arrives later, migrate accumulator
+            if (incomingId && indexToToolCallId[idx] && indexToToolCallId[idx].startsWith('pending_') && indexToToolCallId[idx] !== incomingId) {
+              const oldId = indexToToolCallId[idx];
+              if (toolCallAccumulatorsById[oldId]) {
+                const existing = toolCallAccumulatorsById[oldId];
+                delete toolCallAccumulatorsById[oldId];
+                toolCallAccumulatorsById[incomingId] = {
+                  id: incomingId,
+                  name: existing.name,
+                  args: existing.args,
+                  emitted: existing.emitted,
+                };
+              }
+              indexToToolCallId[idx] = incomingId;
+              accId = incomingId;
+            }
+
+            if (!toolCallAccumulatorsById[accId]) {
+              toolCallAccumulatorsById[accId] = { id: accId, args: "" };
+            }
+            const acc = toolCallAccumulatorsById[accId];
+
+            if (toolCall.function?.name) acc.name = toolCall.function.name;
+            if (typeof toolCall.function?.arguments === "string") {
+              acc.args += toolCall.function.arguments;
             }
           }
         }
@@ -367,6 +399,21 @@ function createOpenAIStreamingResponse(
           sawFinishSignal = true;
 
           if (usage && !finalResponseStored) {
+            // Finalize tool calls before completing
+            for (const acc of Object.values(toolCallAccumulatorsById)) {
+              if (!acc.emitted && acc.name) {
+                try {
+                  const parsed = JSON.parse(acc.args || "{}");
+                  const newToolCall: ToolCall = { id: acc.id, name: acc.name, input: parsed };
+                  collectedToolCalls.push(newToolCall);
+                  acc.emitted = true;
+                  // Emit tool_call chunk now that we have complete arguments
+                  yield { type: "tool_call", toolCall: newToolCall };
+                } catch {
+                  // Skip if args are not valid JSON
+                }
+              }
+            }
             const hasReasoning = !!collectedReasoning.trim();
             const finalResponse: LLMResponse = {
               service: requestConfig.service,
@@ -405,6 +452,20 @@ function createOpenAIStreamingResponse(
 
     // If stream ended (e.g., [DONE]) but we haven't emitted final response yet, emit now
     if (!finalResponseStored) {
+      // Finalize any pending tool calls
+      for (const acc of Object.values(toolCallAccumulatorsById)) {
+        if (!acc.emitted && acc.name) {
+          try {
+            const parsed = JSON.parse(acc.args || "{}");
+            const newToolCall: ToolCall = { id: acc.id, name: acc.name, input: parsed };
+            collectedToolCalls.push(newToolCall);
+            acc.emitted = true;
+            yield { type: "tool_call", toolCall: newToolCall };
+          } catch {
+            // Ignore unparsable leftovers
+          }
+        }
+      }
       const hasReasoning = !!collectedReasoning.trim();
       const finalResponse: LLMResponse = {
         service: requestConfig.service,

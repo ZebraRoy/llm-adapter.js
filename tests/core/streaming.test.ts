@@ -4,7 +4,9 @@ import {
   mockStreamingChunks,
   createMockFetch,
   testMessages,
-  testTools
+  testTools,
+  mockOpenAIStreamingWithToolsChunksFragmented,
+  mockAnthropicStreamingWithToolsDeltaChunks
 } from '../utils/mock-responses.js';
 import type { StreamChunk } from '../../src/types/index.js';
 
@@ -64,6 +66,32 @@ describe('Streaming with Tool Calls and Reasoning', () => {
       expect(toolCallChunks[0].toolCall?.input).toEqual({ location: 'San Francisco' });
     });
 
+    it('should assemble fragmented tool call arguments before emitting tool_call chunks', async () => {
+      const mockFetch = createMockFetch({}, {
+        streaming: true,
+        chunks: mockOpenAIStreamingWithToolsChunksFragmented
+      });
+
+      const config = {
+        service: 'openai' as const,
+        apiKey: 'test-key',
+        model: 'gpt-4',
+        messages: testMessages,
+        tools: testTools
+      };
+
+      const response = await streamMessage(config, { fetch: mockFetch });
+
+      const chunks: StreamChunk[] = [];
+      for await (const chunk of response.chunks) {
+        chunks.push(chunk);
+      }
+
+      const toolCallChunks = chunks.filter(c => c.type === 'tool_call');
+      expect(toolCallChunks).toHaveLength(1);
+      expect(toolCallChunks[0].toolCall?.name).toBe('OP-fuzzy-search');
+      expect(toolCallChunks[0].toolCall?.input).toEqual({ keyword: '代理' });
+    });
     // Note: OpenAI reasoning is not yet implemented in the provider
   });
 
@@ -130,6 +158,34 @@ describe('Streaming with Tool Calls and Reasoning', () => {
 
       expect(toolCallChunks).toHaveLength(1);
       expect(toolCallChunks[0].toolCall?.name).toBe('get_weather');
+    });
+
+    it('should assemble input_json_delta into final tool_use input before emitting tool_call', async () => {
+      const mockFetch = createMockFetch({}, {
+        streaming: true,
+        chunks: mockAnthropicStreamingWithToolsDeltaChunks
+      });
+
+      const config = {
+        service: 'anthropic' as const,
+        apiKey: 'test-key',
+        model: 'claude-3-5-sonnet-20241022',
+        messages: testMessages,
+        tools: testTools,
+        budgetTokens: 2048
+      };
+
+      const response = await streamMessage(config, { fetch: mockFetch });
+
+      const chunks: StreamChunk[] = [];
+      for await (const chunk of response.chunks) {
+        chunks.push(chunk);
+      }
+
+      const toolCallChunks = chunks.filter(c => c.type === 'tool_call');
+      expect(toolCallChunks).toHaveLength(1);
+      expect(toolCallChunks[0].toolCall?.name).toBe('get_weather');
+      expect(toolCallChunks[0].toolCall?.input).toEqual({ location: 'San Francisco' });
     });
   });
 

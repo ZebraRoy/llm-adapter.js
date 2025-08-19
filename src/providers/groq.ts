@@ -237,6 +237,9 @@ function createOpenAIStreamingResponse(
   let collectedContent = "";
   let collectedReasoning = "";
   let collectedToolCalls: ToolCall[] = [];
+  // Accumulate tool call deltas keyed by id (with index fallback)
+  const toolCallAccumulatorsById: Record<string, { id: string; name?: string; args: string }> = {};
+  const indexToToolCallId: Record<number, string> = {};
   let usage: Usage | undefined;
   let finalResponse: LLMResponse | undefined;
   let chunksCache: StreamChunk[] = [];
@@ -324,27 +327,50 @@ function createOpenAIStreamingResponse(
         }
         
         if (delta.tool_calls) {
-          // Handle tool call streaming
           for (const toolCall of delta.tool_calls) {
-            if (toolCall.function?.name) {
-              const newToolCall: ToolCall = {
-                id: toolCall.id,
-                name: toolCall.function.name,
-                input: JSON.parse(toolCall.function.arguments || "{}"),
-              };
-              collectedToolCalls.push(newToolCall);
-              const toolCallChunk = {
-                type: "tool_call" as const,
-                toolCall: newToolCall,
-              };
-              chunksCache.push(toolCallChunk);
+            const idx: number = (toolCall as any).index ?? 0;
+            const incomingId: string | undefined = (toolCall as any).id;
+            let accId = incomingId || indexToToolCallId[idx];
+            if (!accId) {
+              accId = `pending_${idx}`;
+              indexToToolCallId[idx] = accId;
             }
+            if (incomingId && indexToToolCallId[idx] && indexToToolCallId[idx].startsWith('pending_') && indexToToolCallId[idx] !== incomingId) {
+              const oldId = indexToToolCallId[idx];
+              if (toolCallAccumulatorsById[oldId]) {
+                const existing = toolCallAccumulatorsById[oldId];
+                delete toolCallAccumulatorsById[oldId];
+                toolCallAccumulatorsById[incomingId] = { id: incomingId, name: existing.name, args: existing.args };
+              }
+              indexToToolCallId[idx] = incomingId;
+              accId = incomingId;
+            }
+            if (!toolCallAccumulatorsById[accId]) {
+              toolCallAccumulatorsById[accId] = { id: accId, args: "" };
+            }
+            const acc = toolCallAccumulatorsById[accId];
+            if (toolCall.function?.name) acc.name = toolCall.function.name;
+            if (typeof toolCall.function?.arguments === 'string') acc.args += toolCall.function.arguments;
           }
         }
         
         if (choice && choice.finish_reason) {
           sawFinishSignal = true;
           if (usage && !finalResponse) {
+            // Finalize any pending tool calls before completing
+            for (const acc of Object.values(toolCallAccumulatorsById)) {
+              if (acc.name) {
+                try {
+                  const parsed = JSON.parse(acc.args || '{}');
+                  const newToolCall: ToolCall = { id: acc.id, name: acc.name, input: parsed };
+                  collectedToolCalls.push(newToolCall);
+                  const toolCallChunk = { type: "tool_call" as const, toolCall: newToolCall };
+                  chunksCache.push(toolCallChunk);
+                } catch {
+                  // ignore invalid JSON
+                }
+              }
+            }
             const hasReasoning = !!collectedReasoning.trim();
             finalResponse = {
               service: requestConfig.service,
@@ -383,6 +409,20 @@ function createOpenAIStreamingResponse(
 
     // If stream ended without emitting complete, emit it now
     if (!isStreamComplete) {
+      // Finalize any pending tool calls
+      for (const acc of Object.values(toolCallAccumulatorsById)) {
+        if (acc.name) {
+          try {
+            const parsed = JSON.parse(acc.args || '{}');
+            const newToolCall: ToolCall = { id: acc.id, name: acc.name, input: parsed };
+            collectedToolCalls.push(newToolCall);
+            const toolCallChunk = { type: "tool_call" as const, toolCall: newToolCall };
+            chunksCache.push(toolCallChunk);
+          } catch {
+            // ignore invalid JSON
+          }
+        }
+      }
       const hasReasoning = !!collectedReasoning.trim();
       finalResponse = {
         service: requestConfig.service,

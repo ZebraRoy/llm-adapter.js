@@ -46,6 +46,20 @@ export const mockOpenAIStreamingWithToolsChunks = [
 ];
 
 /**
+ * Mock OpenAI streaming response chunks with fragmented tool call arguments
+ */
+export const mockOpenAIStreamingWithToolsChunksFragmented = [
+  'data: {"id":"chatcmpl-frag-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_frag","type":"function","function":{"name":"OP-fuzzy-search","arguments":""}}]},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-frag-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\""}}]},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-frag-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"keyword"}}]},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-frag-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\\":\\\""}}]},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-frag-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"代理"}}]},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-frag-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\\"}"}}]},"finish_reason":null}]}\n\n',
+  'data: {"id":"chatcmpl-frag-123","object":"chat.completion.chunk","created":1677652288,"model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":20,"completion_tokens":10,"total_tokens":30}}\n\n',
+  'data: [DONE]\n\n'
+];
+
+/**
  * Mock OpenAI streaming response chunks with reasoning (o1/o3 style)
  */
 export const mockOpenAIStreamingWithReasoningChunks = [
@@ -144,6 +158,19 @@ export const mockAnthropicStreamingWithToolsChunks = [
   'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_123","name":"get_weather","input":{"location":"San Francisco"}}}\n\n',
   'data: {"type":"content_block_stop","index":0}\n\n',
   'data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":15}}\n\n',
+  'data: {"type":"message_stop"}\n\n'
+];
+
+/**
+ * Mock Anthropic streaming with tool_use input streamed via input_json_delta
+ */
+export const mockAnthropicStreamingWithToolsDeltaChunks = [
+  'data: {"type":"message_start","message":{"id":"msg_tools_delta_123","type":"message","role":"assistant","model":"claude-3-5-sonnet-20241022","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":25,"output_tokens":0}}}\n\n',
+  'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_789","name":"get_weather","input":{}}}\n\n',
+  'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"location\\":"}}\n\n',
+  'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":" \\\"San Francisco\\\"}"}}\n\n',
+  'data: {"type":"content_block_stop","index":0}\n\n',
+  'data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":10}}\n\n',
   'data: {"type":"message_stop"}\n\n'
 ];
 
@@ -704,11 +731,13 @@ export const mockStreamingChunks = {
     basic: mockOpenAIStreamingChunks,
     withTools: mockOpenAIStreamingWithToolsChunks,
     withReasoning: mockOpenAIStreamingWithReasoningChunks,
+    withFragmentedTools: mockOpenAIStreamingWithToolsChunksFragmented,
   },
   anthropic: {
     basic: mockAnthropicStreamingChunks,
     withThinking: mockAnthropicStreamingWithThinkingChunks,
     withTools: mockAnthropicStreamingWithToolsChunks,
+    withToolsDelta: mockAnthropicStreamingWithToolsDeltaChunks,
     withThinkingAndTools: mockAnthropicStreamingWithThinkingAndToolsChunks,
   },
   deepseek: {
