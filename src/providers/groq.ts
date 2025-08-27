@@ -139,11 +139,24 @@ function formatOpenAIRequest(config: LLMConfig, defaultModel: string, stream = f
         };
       }
       
-      // Handle regular messages
+      // Handle regular messages (support multimodal image parts)
       return {
         role: msg.role === "tool_call" ? "assistant" : msg.role,
-        content: typeof msg.content === "string" ? msg.content : 
-                 msg.content.map(c => ({ type: c.type, text: c.content })),
+        content: typeof msg.content === "string"
+          ? msg.content
+          : msg.content.map(part => {
+              if (part.type === "text") {
+                return { type: "text", text: part.content };
+              }
+              if (part.type === "image") {
+                let url = part.content;
+                if (!/^data:/.test(url) && part.metadata && typeof (part.metadata as any).mimeType === 'string') {
+                  url = `data://${(part.metadata as any).mimeType};base64,${part.content}`.replace('data://', 'data:');
+                }
+                return { type: "image_url", image_url: { url } } as any;
+              }
+              return { type: "text", text: String(part.content) };
+            }),
       };
     }),
     temperature: config.temperature,

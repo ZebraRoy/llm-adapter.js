@@ -154,12 +154,37 @@ function formatGoogleRequest(config: LLMConfig, defaultModel: string): any {
       };
     }
     
-    // Handle regular messages
+    // Handle regular messages (support multimodal image parts)
     const role = msg.role === "assistant" ? "model" : "user";
-    const parts = [{ 
-      text: typeof msg.content === "string" ? msg.content : 
-            JSON.stringify(msg.content) 
-    }];
+    let parts: any[];
+    if (typeof msg.content === "string") {
+      parts = [{ text: msg.content }];
+    } else if (Array.isArray(msg.content)) {
+      parts = msg.content.map(part => {
+        if (part.type === "text") {
+          return { text: part.content };
+        }
+        if (part.type === "image") {
+          // Gemini supports inlineData (base64 + mimeType) or fileData{fileUri}
+          if (/^data:/.test(part.content)) {
+            const m = part.content.match(/^data:([^;]+);base64,(.*)$/);
+            if (m) {
+              return { inlineData: { mimeType: m[1], data: m[2] } };
+            }
+            // fallback to text if parse fails
+            return { text: "[image]" };
+          }
+          if (part.metadata && typeof (part.metadata as any).mimeType === 'string' && /^[A-Za-z0-9+/=]+$/.test(part.content)) {
+            return { inlineData: { mimeType: (part.metadata as any).mimeType, data: part.content } };
+          }
+          // treat as URL reference
+          return { fileData: { fileUri: part.content } };
+        }
+        return { text: String(part.content) };
+      });
+    } else {
+      parts = [{ text: JSON.stringify(msg.content) }];
+    }
     
     return {
       role,

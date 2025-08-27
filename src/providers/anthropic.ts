@@ -163,11 +163,43 @@ function formatAnthropicRequest(config: LLMConfig, defaultModel: string, budgetT
         };
       }
       
-      // Handle regular messages
+      // Handle regular messages (support multimodal image parts)
       return {
         role: msg.role === "tool_call" ? "assistant" : msg.role,
-        content: typeof msg.content === "string" ? msg.content : 
-                 msg.content.map(c => ({ type: c.type, text: c.content })),
+        content: typeof msg.content === "string"
+          ? msg.content
+          : msg.content.map(part => {
+              if (part.type === "text") {
+                return { type: "text", text: part.content };
+              }
+              if (part.type === "image") {
+                // Anthropic expects { type: "image", source: { type: "base64", media_type, data } } or { type: "image", source: { type: "url", url } }
+                const source: any = {};
+                if (/^data:/.test(part.content)) {
+                  // Data URL form: data:<mime>;base64,<b64>
+                  const match = part.content.match(/^data:([^;]+);base64,(.*)$/);
+                  if (match) {
+                    source.type = "base64";
+                    source.media_type = match[1];
+                    source.data = match[2];
+                  } else {
+                    // Fallback: treat as URL if parsing fails
+                    source.type = "url";
+                    source.url = part.content;
+                  }
+                } else if (part.metadata && typeof (part.metadata as any).mimeType === 'string') {
+                  // When provided as raw base64 without data URL
+                  source.type = "base64";
+                  source.media_type = (part.metadata as any).mimeType;
+                  source.data = part.content;
+                } else {
+                  source.type = "url";
+                  source.url = part.content;
+                }
+                return { type: "image", source } as any;
+              }
+              return { type: "text", text: String(part.content) };
+            }),
       };
     }),
     system: systemMessages.map(msg => msg.content).join("\n") || undefined,

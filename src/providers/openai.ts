@@ -149,11 +149,29 @@ function formatOpenAIRequest(config: LLMConfig, defaultModel: string, stream = f
         };
       }
       
-      // Handle regular messages
+      // Handle regular messages (support multimodal image parts)
       return {
         role: msg.role,
-        content: typeof msg.content === "string" ? msg.content : 
-                 (Array.isArray(msg.content) ? msg.content.map(c => ({ type: c.type, text: c.content })) : msg.content),
+        content: typeof msg.content === "string"
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content.map(part => {
+                if (part.type === "text") {
+                  return { type: "text", text: part.content };
+                }
+                if (part.type === "image") {
+                  // OpenAI chat/completions expects image parts as { type: "image_url", image_url: { url } }
+                  let url = part.content;
+                  if (!/^data:/.test(url) && part.metadata && typeof (part.metadata as any).mimeType === 'string') {
+                    // If metadata provides mimeType and content likely base64, construct data URL
+                    url = `data://${(part.metadata as any).mimeType};base64,${part.content}`.replace('data://', 'data:');
+                  }
+                  return { type: "image_url", image_url: { url } } as any;
+                }
+                // Fallback: coerce into text
+                return { type: "text", text: String(part.content) };
+              })
+            : msg.content,
       };
     }),
     temperature: config.temperature,

@@ -13,6 +13,82 @@ A unified TypeScript library for working with multiple LLM providers through a c
 - 🔌 **Dependency Injection** - Customizable fetch implementation for testing and advanced use cases
 - ⚡ **Modern** - Built with modern ES modules and async/await
 
+## Multimodal: Image Inputs
+
+You can attach images alongside text by using structured message content parts. Use `MessageContent[]` with `type: "image"` for image parts and `type: "text"` for text.
+
+Supported formats by provider:
+
+- **OpenAI, Groq, DeepSeek, xAI, Ollama (OpenAI-compatible)**: Image URL or Data URL. Internally mapped to `{ type: "image_url", image_url: { url } }`.
+- **Anthropic**: Either `data:` URLs or raw base64 with `mimeType` metadata (mapped to `{ type: "image", source: { type: "base64", media_type, data } }`), or regular URLs (mapped to `{ type: "image", source: { type: "url", url } }`).
+- **Google Gemini**: `data:` URLs or raw base64 with `mimeType` metadata are mapped to `inlineData`; plain URLs are mapped to `fileData.fileUri`.
+
+### Example: URL image (works across providers)
+
+```ts
+import { sendMessage } from "llm-adapter";
+
+await sendMessage({
+  service: "openai", // or groq, deepseek, xai, ollama, anthropic, google
+  apiKey: "...", // if required by provider
+  model: "gpt-4o-mini",
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", content: "What is in this image?" },
+        { type: "image", content: "https://example.com/cat.jpg" },
+      ],
+    },
+  ],
+});
+```
+
+### Example: Base64 image as Data URL (all providers)
+
+```ts
+const dataUrl = `data:image/png;base64,${base64}`;
+
+await sendMessage({
+  service: "openai", // or others
+  apiKey: "...",
+  model: "gpt-4o-mini",
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", content: "Please describe this." },
+        { type: "image", content: dataUrl },
+      ],
+    },
+  ],
+});
+```
+
+### Example: Raw base64 plus mimeType metadata (Anthropic/Gemini friendly)
+
+```ts
+await sendMessage({
+  service: "anthropic", // also works for google (as inlineData)
+  apiKey: "...",
+  model: "claude-3-sonnet-20240229",
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", content: "Summarize this diagram" },
+        { type: "image", content: base64, metadata: { mimeType: "image/png" } },
+      ],
+    },
+  ],
+});
+```
+
+Notes:
+
+- When using raw base64, provide `metadata.mimeType` for best compatibility. Otherwise, prefer a `data:` URL.
+- For Google, plain URLs are treated as `fileData.fileUri` and must be accessible to Gemini.
+
 ## Installation
 
 ```bash
