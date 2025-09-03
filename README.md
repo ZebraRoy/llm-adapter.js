@@ -129,10 +129,9 @@ type LLMResponse = {
     | "deepseek"
     | "xai";
   model: string;
-  content: string; // Primary text content
-  reasoning?: string; // Provider-supported reasoning/thinking, when available
+  content: string;
+  reasoning?: string;
   toolCalls?: Array<{
-    // Tool calls the assistant wants you to run
     id: string;
     name: string;
     input: Record<string, unknown>;
@@ -146,10 +145,12 @@ type LLMResponse = {
     input_tokens: number;
     output_tokens: number;
     total_tokens: number;
-    reasoning_tokens?: number; // When provided by the service
+    reasoning_tokens?: number;
+    input_cost?: number;
+    output_cost?: number;
+    total_cost?: number;
   };
   messages: Array<{
-    // Your original messages plus the assistant reply
     role: "user" | "assistant" | "system" | "tool_call" | "tool_result";
     content: string | any[];
     tool_call_id?: string;
@@ -226,6 +227,25 @@ for await (const chunk of stream.chunks) {
 // Or collect the full response
 const full = await stream.collect();
 console.log(full.content);
+```
+
+### `streamQuestion(config, question, options?)` - Convenience (streaming)
+
+```typescript
+import { streamQuestion } from "llm-adapter";
+
+const stream = await streamQuestion(
+  {
+    service: "anthropic",
+    apiKey: "your-key",
+    model: "claude-3-sonnet-20240229",
+  },
+  "Explain quantum computing",
+  { systemPrompt: "Be concise and clear" }
+);
+
+const final = await stream.collect();
+console.log(final.content);
 ```
 
 ### `askQuestion(config, question, options?)` - Convenience function
@@ -480,6 +500,80 @@ if (hasToolCalls(response)) {
   }
 }
 ```
+
+#### Message structure reference for tool calling
+
+Use these minimal shapes when continuing a conversation after tool calls. Do not add a message with role `"tool_call"` yourself; instead, add an assistant message containing a `tool_calls` array, followed by one or more `tool_result` messages.
+
+```typescript
+import type { Message, ToolCall } from "llm-adapter";
+
+// Assistant asks you to run tools (you add this back into history)
+const assistantWithToolCalls: Message = {
+  role: "assistant",
+  // content can be omitted when only calling tools; if you include it, ensure it's non-empty
+  tool_calls: [
+    {
+      id: "call_1",
+      name: "get_weather",
+      input: { location: "Tokyo", unit: "celsius" },
+    },
+    {
+      id: "call_2",
+      name: "calculate",
+      input: { expression: "15 * 24" },
+    },
+  ],
+};
+
+// For OpenAI-compatible providers (OpenAI, Groq, DeepSeek, xAI, Ollama):
+// Provide tool_result messages with tool_call_id matching the assistant's tool_calls
+const toolResultOpenAI_1: Message = {
+  role: "tool_result",
+  content: "The weather in Tokyo is 22°C and sunny.",
+  tool_call_id: "call_1",
+};
+
+const toolResultOpenAI_2: Message = {
+  role: "tool_result",
+  content: "15 * 24 = 360",
+  tool_call_id: "call_2",
+};
+
+// For Google Gemini: include the function name in tool_result; tool_call_id is not required
+const toolResultGoogle_1: Message = {
+  role: "tool_result",
+  name: "get_weather",
+  // content can be a string or an object; strings are wrapped as { result: content }
+  content: "The weather in Tokyo is 22°C and sunny.",
+};
+
+// Putting it together (OpenAI-compatible flow)
+const messagesOpenAI: Message[] = [
+  { role: "system", content: "You can call tools." },
+  { role: "user", content: "Weather in Tokyo and 15*24?" },
+  assistantWithToolCalls,
+  toolResultOpenAI_1,
+  toolResultOpenAI_2,
+  // Next, call sendMessage with this updated history
+];
+
+// Putting it together (Google flow)
+const messagesGoogle: Message[] = [
+  { role: "system", content: "You can call tools." },
+  { role: "user", content: "Weather in Tokyo and 15*24?" },
+  assistantWithToolCalls,
+  toolResultGoogle_1,
+  { role: "tool_result", name: "calculate", content: "15 * 24 = 360" },
+  // Next, call sendMessage with this updated history
+];
+
+// Note for OpenAI: when only tool_calls are present, ensure the assistant message
+// either has a non-empty content string or omit content entirely.
+// If you must include an empty content, use a single space (" ").
+```
+
+Streaming note: when using `streamMessage`, tool calls are available via `chunk.type === "tool_call"` and `chunk.toolCall`. Collect them into an array of `ToolCall`, then add an assistant message with that `tool_calls` array and follow with `tool_result` messages as above.
 
 ### Complete Tool Call Flow with Conversation History
 
@@ -846,7 +940,7 @@ const config: OpenAIConfig = {
   ],
 };
 
-const response = await sendMessage(config, { reasoningEffort: "high" });
+const response = await sendMessage(config);
 
 if (hasReasoning(response)) {
   console.log("Reasoning tokens:", response.usage.reasoning_tokens);
@@ -871,10 +965,10 @@ const config: GoogleConfig = {
   ],
 };
 
-const response = await sendMessage(config, {
-  thinkingBudget: 8192, // Control thinking token limit
-  includeThoughts: true, // Get thought summaries
-});
+// Configure Gemini thinking on the config object
+config.thinkingBudget = 8192;
+config.includeThoughts = true;
+const response = await sendMessage(config);
 
 if (hasReasoning(response)) {
   console.log("Thinking process:", response.reasoning);
@@ -898,9 +992,9 @@ const config: XAIConfig = {
   ],
 };
 
-const response = await sendMessage(config, {
-  reasoningEffort: "high", // "low" for minimal thinking, "high" for maximum
-});
+// xAI Grok 3 supports reasoningEffort; set on config
+config.reasoningEffort = "high";
+const response = await sendMessage(config);
 
 if (hasReasoning(response)) {
   console.log("Reasoning content:", response.reasoning);
@@ -925,11 +1019,11 @@ const config: GroqConfig = {
   ],
 };
 
-const response = await sendMessage(config, {
-  reasoningFormat: "parsed", // Get structured reasoning output
-  reasoningEffort: "default", // Enable thinking mode
-  temperature: 0.6,
-});
+// Groq reasoning controls belong on the config
+config.reasoningFormat = "parsed";
+config.reasoningEffort = "default";
+config.temperature = 0.6;
+const response = await sendMessage(config);
 
 if (hasReasoning(response)) {
   console.log("Reasoning steps:", response.reasoning);
@@ -1306,6 +1400,7 @@ const response = await askQuestion(
 - `sendMessage(config, options?)` - Send conversation (non-streaming)
 - `streamMessage(config, options?)` - Send conversation (streaming)
 - `askQuestion(config, question, options?)` - Ask single question
+- `streamQuestion(config, question, options?)` - Ask single question (streaming)
 
 ### Fetch Management
 
@@ -1321,13 +1416,15 @@ const response = await askQuestion(
 
 ### Configuration Options
 
-All functions support these options:
+All functions support these call-level overrides:
 
 - `tools?: Tool[]` - Available functions for the LLM to call
 - `temperature?: number` - Response randomness (0.0 to 1.0)
 - `maxTokens?: number` - Maximum tokens to generate
 - `fetch?: FetchFunction` - Custom fetch implementation for this call
 - `isBrowser?: boolean` - Enable browser-specific API handling and headers
+
+Provider- and model-specific controls such as `reasoningEffort`, `reasoningFormat`, `thinkingBudget`, and `includeThoughts` should be set on the provider config object (e.g., `OpenAIConfig`, `GroqConfig`, `GoogleConfig`).
 
 ## Examples Repository
 

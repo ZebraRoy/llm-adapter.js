@@ -33,53 +33,53 @@ if (isToolCallResponse(response)) {
 
 ```typescript
 async function completeToolCallChain(initialConfig: ServiceConfig) {
-  let config = { ...initialConfig };
+  const config: ServiceConfig = { ...initialConfig };
   let roundNumber = 1;
-  const maxRounds = 5; // Prevent infinite loops
+  const maxRounds = 5;
 
   while (roundNumber <= maxRounds) {
-    console.log(`--- ROUND ${roundNumber} ---`);
-
     const response = await sendMessage(config);
 
     if (hasToolCalls(response) && response.toolCalls) {
-      // 🔑 CRITICAL: Add assistant's response to conversation (don't overwrite!)
-      // Handle cases where content is null but tool_calls exist (OpenAI pattern)
-      const assistantMessage = {
-        role: "assistant" as const,
+      // Add assistant's response with tool_calls (handle null/empty content)
+      const assistantMessage: Message = {
+        role: "assistant",
         ...(response.content &&
           response.content.trim() && { content: response.content }),
-        ...(response.toolCalls &&
-          response.toolCalls.length > 0 && { tool_calls: response.toolCalls }),
-      };
+        ...(response.toolCalls.length > 0 && {
+          tool_calls: response.toolCalls,
+        }),
+      } as Message;
 
-      // Ensure message has either content or tool_calls (required by OpenAI)
-      if (!assistantMessage.content && !assistantMessage.tool_calls) {
-        assistantMessage.content = " "; // Minimal fallback
+      if (
+        !("content" in assistantMessage) &&
+        !("tool_calls" in assistantMessage)
+      ) {
+        (assistantMessage as any).content = " ";
       }
 
       config.messages.push(assistantMessage);
 
-      // Execute all tool calls
+      // Execute all tool calls and add results
       for (const toolCall of response.toolCalls) {
         const result = await executeRealTool(toolCall);
-
-        // 🔑 CRITICAL: Add tool results to conversation
         config.messages.push({
           role: "tool_result",
-          content: `${toolCall.name}: ${result}`,
+          content: result,
           tool_call_id: toolCall.id, // Required for most providers
-          name: toolCall.name, // Required for Google provider
+          name: toolCall.name, // Required by Google provider
         });
       }
 
-      roundNumber++; // Continue to next round
-    } else {
-      // ✅ Final answer received - chain complete!
-      console.log("Final answer:", response.content);
-      return response.messages; // Return complete conversation
+      roundNumber++;
+      continue;
     }
+
+    // Final answer
+    return response.messages;
   }
+
+  throw new Error(`Tool chain exceeded ${maxRounds} rounds`);
 }
 ```
 
