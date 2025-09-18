@@ -126,11 +126,19 @@ function formatGoogleRequest(config: LLMConfig, defaultModel: string): any {
             }
           }
         }
-        // Fallback: our Google adapter generates ids as `google_${name}_${timestamp}`
+        // Fallback: our Google adapter generates ids as `google_${name}_${timestamp}_${counter}`
+        // Extract the function name by trimming the last two underscore-delimited segments
         if (!functionName && msg.tool_call_id.startsWith('google_')) {
+          const prefixLen = 'google_'.length;
           const lastUnderscore = msg.tool_call_id.lastIndexOf('_');
-          if (lastUnderscore > 'google_'.length) {
-            functionName = msg.tool_call_id.substring('google_'.length, lastUnderscore);
+          if (lastUnderscore > prefixLen) {
+            const secondLastUnderscore = msg.tool_call_id.lastIndexOf('_', lastUnderscore - 1);
+            if (secondLastUnderscore > prefixLen) {
+              functionName = msg.tool_call_id.substring(prefixLen, secondLastUnderscore);
+            } else {
+              // Backward compatibility for older ids without counter suffix
+              functionName = msg.tool_call_id.substring(prefixLen, lastUnderscore);
+            }
           }
         }
       }
