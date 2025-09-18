@@ -25,8 +25,11 @@ export function createGroqAdapter(config: GroqConfig): LLMAdapter {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${config.apiKey}`,
+        ...(requestConfig.headers || {}),
       };
+      if (!headers["Authorization"]) {
+        headers["Authorization"] = `Bearer ${config.apiKey}`;
+      }
       
       // Groq API may have CORS restrictions for browser requests
       if (requestConfig.isBrowser || config.isBrowser) {
@@ -53,8 +56,11 @@ export function createGroqAdapter(config: GroqConfig): LLMAdapter {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${config.apiKey}`,
+        ...(requestConfig.headers || {}),
       };
+      if (!headers["Authorization"]) {
+        headers["Authorization"] = `Bearer ${config.apiKey}`;
+      }
       
       // Groq API may have CORS restrictions for browser requests
       if (requestConfig.isBrowser || config.isBrowser) {

@@ -25,9 +25,14 @@ export function createAnthropicAdapter(config: AnthropicConfig): LLMAdapter {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        "x-api-key": config.apiKey,
-        "anthropic-version": "2023-06-01",
+        ...(requestConfig.headers || {}),
       };
+      if (!headers["x-api-key"]) {
+        headers["x-api-key"] = config.apiKey;
+      }
+      if (!headers["anthropic-version"]) {
+        headers["anthropic-version"] = "2023-06-01";
+      }
       
       
       
@@ -56,9 +61,14 @@ export function createAnthropicAdapter(config: AnthropicConfig): LLMAdapter {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        "x-api-key": config.apiKey,
-        "anthropic-version": "2023-06-01",
+        ...(requestConfig.headers || {}),
       };
+      if (!headers["x-api-key"]) {
+        headers["x-api-key"] = config.apiKey;
+      }
+      if (!headers["anthropic-version"]) {
+        headers["anthropic-version"] = "2023-06-01";
+      }
       
       
       

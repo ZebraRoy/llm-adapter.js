@@ -18,6 +18,8 @@ export interface LLMConfig {
   apiKey?: string;
   /** Custom base URL for the API endpoint */
   baseUrl?: string;
+  /** Additional HTTP headers to include with the request (merged after auth headers) */
+  headers?: Record<string, string>;
   /** Temperature for response randomness (0.0 to 1.0) */
   temperature?: number;
   /** Maximum number of tokens to generate */

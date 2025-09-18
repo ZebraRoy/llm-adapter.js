@@ -25,6 +25,7 @@ export function createOllamaAdapter(config: OllamaConfig): LLMAdapter {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
+        ...(requestConfig.headers || {}),
       };
       
       // Ollama is typically used locally and should work in browsers if the server allows CORS
@@ -53,6 +54,7 @@ export function createOllamaAdapter(config: OllamaConfig): LLMAdapter {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
+        ...(requestConfig.headers || {}),
       };
       
       // Ollama is typically used locally and should work in browsers if the server allows CORS

@@ -25,8 +25,11 @@ export function createOpenAIAdapter(config: OpenAIConfig): LLMAdapter {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${config.apiKey}`,
+        ...(requestConfig.headers || {}),
       };
+      if (!headers["Authorization"]) {
+        headers["Authorization"] = `Bearer ${config.apiKey}`;
+      }
       
       // OpenAI API doesn't officially support CORS for browser requests
       // Users may need to use a proxy server for browser-based applications
@@ -64,8 +67,11 @@ export function createOpenAIAdapter(config: OpenAIConfig): LLMAdapter {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${config.apiKey}`,
+        ...(requestConfig.headers || {}),
       };
+      if (!headers["Authorization"]) {
+        headers["Authorization"] = `Bearer ${config.apiKey}`;
+      }
       
       // OpenAI API doesn't officially support CORS for browser requests
       if (requestConfig.isBrowser || config.isBrowser) {

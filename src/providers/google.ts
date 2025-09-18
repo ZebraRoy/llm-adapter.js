@@ -25,8 +25,11 @@ export function createGoogleAdapter(config: GoogleConfig): LLMAdapter {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        "x-goog-api-key": config.apiKey,
+        ...(requestConfig.headers || {}),
       };
+      if (!headers["x-goog-api-key"]) {
+        headers["x-goog-api-key"] = config.apiKey;
+      }
       
       // Google Gemini API has CORS restrictions for browser requests
       if (requestConfig.isBrowser || config.isBrowser) {
@@ -53,8 +56,11 @@ export function createGoogleAdapter(config: GoogleConfig): LLMAdapter {
       const fetchFn = requestConfig.fetch || globalThis.fetch;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        "x-goog-api-key": config.apiKey,
+        ...(requestConfig.headers || {}),
       };
+      if (!headers["x-goog-api-key"]) {
+        headers["x-goog-api-key"] = config.apiKey;
+      }
       
       // Google Gemini API has CORS restrictions for browser requests
       if (requestConfig.isBrowser || config.isBrowser) {
