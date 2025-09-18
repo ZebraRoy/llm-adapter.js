@@ -25,11 +25,11 @@ export function validateToolResultMessage(message: Message, providerName?: Servi
     return; // Ollama doesn't support tools
   }
 
-  // Google doesn't provide real tool_call_ids, so we make it optional
+  // Google doesn't provide real tool_call_ids. Accept either tool_call_id (preferred for our unified API)
+  // or name (Google-native). The adapter will resolve name from tool_call_id when needed.
   if (providerName === 'google') {
-    // For Google, we'll require the function name to match tool results
-    if (!message.name) {
-      throw new Error('Tool result message for Google provider must have a function name');
+    if (!message.tool_call_id && !message.name) {
+      throw new Error('Tool result message for Google provider must include either tool_call_id or name');
     }
     return;
   }
