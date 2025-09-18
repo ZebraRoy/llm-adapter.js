@@ -111,16 +111,40 @@ function formatGoogleRequest(config: LLMConfig, defaultModel: string): any {
     
     // Handle tool result messages
     if (msg.role === "tool_result") {
-      // Google matches by function name, not tool_call_id
-      if (!msg.name) {
-        throw new Error("Tool result message must have function name for Google API");
+      // Google matches by function name, not tool_call_id.
+      // Accept either msg.name (native) or msg.tool_call_id (unified). Resolve name when needed.
+      let functionName = msg.name;
+      if (!functionName && msg.tool_call_id) {
+        // Try to find a preceding assistant message with matching tool_call id
+        for (let i = config.messages.length - 1; i >= 0; i--) {
+          const prior = config.messages[i];
+          if (prior.role === "assistant" && prior.tool_calls && prior.tool_calls.length > 0) {
+            const match = prior.tool_calls.find(tc => tc.id === msg.tool_call_id);
+            if (match) {
+              functionName = match.name;
+              break;
+            }
+          }
+        }
+        // Fallback: our Google adapter generates ids as `google_${name}_${timestamp}`
+        if (!functionName && msg.tool_call_id.startsWith('google_')) {
+          const lastUnderscore = msg.tool_call_id.lastIndexOf('_');
+          if (lastUnderscore > 'google_'.length) {
+            functionName = msg.tool_call_id.substring('google_'.length, lastUnderscore);
+          }
+        }
       }
+
+      if (!functionName) {
+        throw new Error("Tool result for Google must include a name or resolvable tool_call_id");
+      }
+
       return {
         role: "user",
         parts: [
           {
             functionResponse: {
-              name: msg.name, // Function name for matching
+              name: functionName, // Function name for matching
               response: typeof msg.content === "string" ? 
                 { result: msg.content } : msg.content,
             }
@@ -252,6 +276,7 @@ function parseGoogleResponse(data: any, requestConfig: LLMConfig): LLMResponse {
   let responseText = "";
   let thinkingContent = "";
   let toolCalls: ToolCall[] = [];
+  let idCounter = 0;
   
   if (content?.parts) {
     for (const part of content.parts) {
@@ -260,7 +285,7 @@ function parseGoogleResponse(data: any, requestConfig: LLMConfig): LLMResponse {
       }
       if (part.functionCall) {
         toolCalls.push({
-          id: `google_${part.functionCall.name}_${Date.now()}`, // Generate ID based on function name for matching
+          id: `google_${part.functionCall.name}_${Date.now()}_${++idCounter}`,
           name: part.functionCall.name,
           input: part.functionCall.args || {},
         });
@@ -302,6 +327,7 @@ function parseGoogleResponse(data: any, requestConfig: LLMConfig): LLMResponse {
         role: "assistant",
         content: responseText,
         reasoning: thinkingContent || undefined,
+        tool_calls: hasToolCalls ? toolCalls : undefined,
       },
     ],
   };
@@ -321,6 +347,7 @@ function createGoogleStreamingResponse(
   let collectedContent = "";
   let collectedThinking = "";
   let collectedToolCalls: ToolCall[] = [];
+  let idCounter = 0;
   let usage: Usage | undefined;
   let finalResponseStored: LLMResponse | undefined;
   
@@ -339,7 +366,7 @@ function createGoogleStreamingResponse(
             }
             if (part.functionCall) {
               const newToolCall: ToolCall = {
-                id: `google_${part.functionCall.name}_${Date.now()}`,
+                id: `google_${part.functionCall.name}_${Date.now()}_${++idCounter}`,
                 name: part.functionCall.name,
                 input: part.functionCall.args || {},
               };
@@ -388,6 +415,7 @@ function createGoogleStreamingResponse(
                 role: "assistant",
                 content: collectedContent,
                 reasoning: collectedThinking || undefined,
+                tool_calls: collectedToolCalls.length > 0 ? collectedToolCalls : undefined,
               },
             ],
           };
