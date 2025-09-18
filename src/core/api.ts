@@ -9,6 +9,7 @@ import type {
 } from '../types/index.js';
 import { createAdapter } from './adapter.js';
 import { getDefaultFetch } from './fetch.js';
+import { resolveToolResultLinking } from '../utils/index.js';
 
 // ===== MAIN API FUNCTIONS =====
 
@@ -49,6 +50,8 @@ export async function sendMessage(
     fetch: options?.fetch || config.fetch || getDefaultFetch(),
     isBrowser: options?.isBrowser ?? config.isBrowser,
   };
+  // Normalize tool_result linking prior to provider validation/formatting
+  requestConfig.messages = resolveToolResultLinking(requestConfig.messages);
   
   return adapter.call(requestConfig);
 }
@@ -94,6 +97,8 @@ export async function streamMessage(
     fetch: options?.fetch || config.fetch || getDefaultFetch(),
     isBrowser: options?.isBrowser ?? config.isBrowser,
   };
+  // Normalize tool_result linking prior to provider validation/formatting
+  requestConfig.messages = resolveToolResultLinking(requestConfig.messages);
   
   return adapter.stream(requestConfig);
 }

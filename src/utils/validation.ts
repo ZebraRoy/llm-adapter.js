@@ -20,10 +20,7 @@ export function validateToolResultMessage(message: Message, providerName?: Servi
     throw new Error('Tool result message must have content');
   }
 
-  // For providers that don't support tool_call_id, skip this validation
-  if (providerName === 'ollama') {
-    return; // Ollama doesn't support tools
-  }
+  // Ollama uses OpenAI-compatible tool semantics in this library; require tool_call_id
 
   // Google doesn't provide real tool_call_ids, so we make it optional
   if (providerName === 'google') {
