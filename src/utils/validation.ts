@@ -20,10 +20,8 @@ export function validateToolResultMessage(message: Message, providerName?: Servi
     throw new Error('Tool result message must have content');
   }
 
-  // For providers that don't support tool_call_id, skip this validation
-  if (providerName === 'ollama') {
-    return; // Ollama doesn't support tools
-  }
+  // Providers that do not rely on tool_call_id would be handled here.
+  // Note: Ollama is OpenAI-compatible in this library and DOES support tool_call_id.
 
   // Google doesn't provide real tool_call_ids. Accept either tool_call_id (preferred for our unified API)
   // or name (Google-native). The adapter will resolve name from tool_call_id when needed.
@@ -131,32 +129,8 @@ export function validateServiceConfig(config: ServiceConfig): void {
  * @param config - LLM configuration to validate
  */
 export function validateLLMConfig(config: any): void {
-  if (!config) {
-    throw new Error('Configuration is required');
-  }
-
-  if (!config.service) {
-    throw new Error('Service name is required');
-  }
-
-  if (!config.messages || !Array.isArray(config.messages)) {
-    throw new Error('Messages array is required');
-  }
-
-  if (config.messages.length === 0) {
-    throw new Error('At least one message is required');
-  }
-
-  // Validate message structure
-  for (const message of config.messages) {
-    if (!message.role) {
-      throw new Error('Each message must have a role');
-    }
-
-    if (!message.content && message.role !== 'tool_result' && !message.tool_calls) {
-      throw new Error('Each message must have content, tool_calls, or be a tool_result');
-    }
-  }
+  // Delegate to the stricter service config validation to avoid duplication
+  validateServiceConfig(config as ServiceConfig);
 }
 
 /**
